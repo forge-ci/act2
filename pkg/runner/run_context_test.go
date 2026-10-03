@@ -751,6 +751,17 @@ func TestSetRuntimeVariablesWithRunID(t *testing.T) {
 	assert.Equal(t, "Actions.Results:45:45", scp, "contains expected scp claim")
 }
 
+func TestSetRuntimeVariablesInheritsRuntime(t *testing.T) {
+	t.Setenv("ACTIONS_RUNTIME_URL", "http://outer-runtime.example/")
+	t.Setenv("ACTIONS_RUNTIME_TOKEN", "fixture-runtime-token")
+	rc := &RunContext{Config: &Config{ArtifactServerAddr: "myhost", ArtifactServerPort: "8000"}}
+	env := map[string]string{}
+	setActionRuntimeVars(rc, env)
+	assert.Equal(t, "http://outer-runtime.example/", env["ACTIONS_RUNTIME_URL"])
+	assert.Equal(t, "http://outer-runtime.example/", env["ACTIONS_RESULTS_URL"])
+	assert.Equal(t, "fixture-runtime-token", env["ACTIONS_RUNTIME_TOKEN"])
+}
+
 // RUNNER_ENVIRONMENT mirrors GitHub for a job container, and a value the
 // workflow or --env sets wins.
 func TestSetRunnerEnvironment(t *testing.T) {
