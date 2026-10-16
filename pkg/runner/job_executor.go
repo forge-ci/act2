@@ -105,8 +105,10 @@ func newJobExecutor(info jobInfo, sf stepFactory, rc *RunContext) common.Executo
 		jobError := common.JobError(ctx)
 		var err error
 		if rc.Config.AutoRemove || jobError == nil {
-			// always allow 1 min for stopping and removing the runner, even if we were cancelled
-			ctx, cancel := context.WithTimeout(common.WithLogger(context.Background(), common.Logger(ctx)), time.Minute)
+			// always allow 5 min for stopping and removing the runner, even if we were cancelled:
+			// a large job (a multi-GB build tree) can take over a minute to delete through the
+			// per-run Docker proxy on a busy host, and a timeout here fails a job whose steps all passed
+			ctx, cancel := context.WithTimeout(common.WithLogger(context.Background(), common.Logger(ctx)), 5*time.Minute)
 			defer cancel()
 
 			logger := common.Logger(ctx)
