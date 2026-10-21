@@ -571,6 +571,12 @@ keeps that reader through publication and view cleanup, and closes the view
 before releasing its reader. Committed retries do not open or mount a view.
 Normal unmount and removal dispose of the private mount point; failure is a
 partial result and grants no reference-release or source-removal authority.
+Failed view cleanup retains both the cleanup handle and original generation
+reader in a process-owned slot, including failures during view opening. A retry
+must finish that cleanup before acknowledging a receipt or opening another view.
+The slot admits at most one view; concurrent calls refuse immediately, and a
+failed unmount cannot accumulate additional mounts or descriptors.
+
 The command belongs in a dedicated helper mount namespace. Its coordinator must
 prove the exact stopped source's ownership and writer absence, exclude source
 removal and concurrent helpers, observe this helper's exit, and remove a failed

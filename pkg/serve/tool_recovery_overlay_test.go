@@ -1,9 +1,9 @@
 package serve
 
 import (
-	"github.com/stretchr/testify/require"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 )
 
 func TestRecoveryProducerRecipeRemainsByteIdentical(t *testing.T) {

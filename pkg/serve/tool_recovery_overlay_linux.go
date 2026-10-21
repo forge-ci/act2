@@ -4,7 +4,6 @@ package serve
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -46,7 +45,7 @@ func openToolRecoveryOverlay(ctx context.Context, request ToolRecoveryOverlayReq
 	}
 	options := "metacopy=on,lowerdir=" + paths.lower + ",upperdir=" + paths.upper + ",workdir=" + paths.work
 	if err := unix.Mount("overlay", target, "overlay", unix.MS_RDONLY, options); err != nil {
-		return artifactcache.ToolRecoverySourceView{}, errors.Join(fmt.Errorf("mount recovery overlay: %w", err), closeView())
+		return artifactcache.ToolRecoverySourceView{Path: target, Close: closeView}, fmt.Errorf("mount recovery overlay: %w", err)
 	}
 	mounted = true
 	err = verifyRecoveryOverlayMount(target, paths)
@@ -54,7 +53,7 @@ func openToolRecoveryOverlay(ctx context.Context, request ToolRecoveryOverlayReq
 		err = ctx.Err()
 	}
 	if err != nil {
-		return artifactcache.ToolRecoverySourceView{}, errors.Join(err, closeView())
+		return artifactcache.ToolRecoverySourceView{Path: target, Close: closeView}, err
 	}
 	return artifactcache.ToolRecoverySourceView{Path: target, Close: closeView}, nil
 }

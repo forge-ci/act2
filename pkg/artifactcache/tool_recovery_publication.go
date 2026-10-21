@@ -48,6 +48,9 @@ type ToolRecoverySourceView struct {
 	Close func() error
 }
 
+// A factory that fails after allocating a view must return its Close handle
+// with the error. Failed cleanup retains that handle and the original reader;
+// subsequent calls retry cleanup before admitting any new view or receipt.
 type ToolRecoverySourceFactory func(context.Context) (ToolRecoverySourceView, error)
 
 // PublishToolRecoveryView opens a source only after admitting exact protection
