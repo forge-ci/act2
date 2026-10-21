@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -76,7 +77,7 @@ var generationID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 // OverlayRecipe is the exact overlay script for a store and target; its
 // digest is frozen into each tool generation.
 func OverlayRecipe(store, target string) string {
-	return strings.NewReplacer("@STORE@", store, "@TARGET@", target).Replace(toolcacheOverlayRecipe)
+	return strings.NewReplacer("@STORE@", store, "@TARGET@", target, "@UPPER@", path.Join(nativeToolSourceRoot, nativeToolUpperName), "@WORK@", path.Join(nativeToolSourceRoot, nativeToolWorkName)).Replace(toolcacheOverlayRecipe)
 }
 
 func (s *Server) toolcacheEnabled() bool { return s.cfg.ToolCacheStore != "" }

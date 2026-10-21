@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -50,8 +51,45 @@ func reconcileToolRecovery(root string, selection ToolGenerationSelection, pin T
 	return &report, nil
 }
 
-func publishToolRecovery(ctx context.Context, root, source string, pin ToolRecoveryPin, maxBytes int64, syncSelection func(string) error) (report ToolRecoveryPublicationReport) {
+// A dedicated recovery helper owns at most one view. Keep failed cleanup
+// strongly reachable (including its reader) until cleanup succeeds or the
+// process exits. Serial admission bounds retained mounts and descriptors to one.
+var recoveryViewOwner struct {
+	sync.Mutex
+	pending *toolRecoveryPendingView
+}
+
+type toolRecoveryPendingView struct {
+	reader ToolGenerationLease
+	close  func() error
+}
+
+func cleanupPendingToolRecoveryView() error {
+	pending := recoveryViewOwner.pending
+	if pending == nil {
+		return nil
+	}
+	if err := pending.close(); err != nil {
+		return fmt.Errorf("recovery view cleanup: %w", err)
+	}
+	if err := pending.reader.Close(); err != nil {
+		return err
+	}
+	recoveryViewOwner.pending = nil
+	return nil
+}
+
+func publishToolRecoveryView(ctx context.Context, root string, pin ToolRecoveryPin, maxBytes int64, openView ToolRecoverySourceFactory, syncSelection func(string) error) (report ToolRecoveryPublicationReport) {
 	report = ToolRecoveryPublicationReport{SchemaVersion: 1, Root: root, Pin: pin}
+	if !recoveryViewOwner.TryLock() {
+		report.fail(fmt.Errorf("recovery view already in use by this process"))
+		return report
+	}
+	defer recoveryViewOwner.Unlock()
+	if err := cleanupPendingToolRecoveryView(); err != nil {
+		report.fail(err)
+		return report
+	}
 	ctx, cancel := context.WithTimeout(ctx, 180*time.Second)
 	defer cancel()
 	receipt, err := admitToolRecoveryPublication(ctx, root, pin, maxBytes)
@@ -67,13 +105,41 @@ func publishToolRecovery(ctx context.Context, root, source string, pin ToolRecov
 		report.fail(err)
 		return report
 	}
-	defer reader.Close()
+	readerTransferred := false
+	defer func() {
+		if !readerTransferred {
+			_ = reader.Close()
+		}
+	}()
 	original, _, err := readToolGenerationManifest(filepath.Join(root, toolGenerationDirectory, pin.Generation), pin.Generation)
 	if err != nil {
 		report.fail(err)
 		return report
 	}
-	plans, err := inspectToolRecoveryUpdates(ctx, root, source, original.Installs, maxBytes)
+	if openView == nil {
+		report.fail(fmt.Errorf("recovery source factory missing"))
+		return report
+	}
+	view, err := openView(ctx)
+	// A factory that failed after mounting must still return its cleanup handle.
+	if view.Close != nil {
+		readerTransferred = true
+		recoveryViewOwner.pending = &toolRecoveryPendingView{reader: reader, close: view.Close}
+		defer func() {
+			if err := cleanupPendingToolRecoveryView(); err != nil {
+				report.fail(err)
+			}
+		}()
+	}
+	if err != nil {
+		report.fail(err)
+		return report
+	}
+	if view.Close == nil {
+		report.fail(fmt.Errorf("recovery source closer missing"))
+		return report
+	}
+	plans, err := inspectToolRecoveryUpdates(ctx, root, view.Path, original.Installs, maxBytes)
 	if err != nil {
 		report.fail(err)
 		return report

@@ -553,3 +553,48 @@ missing protection, cancellation, corrupt lower/selection/receipt state, metadat
 bounds and a full 10,000-receipt overflow/expiry fixture. This is an act2 helper
 contract; Bosn's live helper mounts, source lifetime exclusion, runtime routing,
 restart recovery and full workflow/large-store acceptance remain unfinished.
+
+### Read-only stopped-overlay helper (Bosn #508)
+
+`cache tool-recovery recover --record INTENT --source-root DISK --toolcache-target ORIGINAL_TARGET --overlay-recipe-sha256 DIGEST --max-bytes N --source-quiescent --apply --cache-server-path STORE`
+recovers the frozen native lower plus the retained engine disk's upper/work as a
+private read-only metacopy view, then publishes completed updates through the
+same durable publication path. `--ci-capabilities` advertises
+`tool-recovery-overlay-v1`. The exact producer recipe is checked before source
+access; shared layout constants preserve its existing rendered bytes on every
+host platform. Missing, aliased, overlapping or mount-option-ambiguous paths
+refuse. The effective kernel mount must prove one exact read-only overlay with
+metacopy and the requested lower, upper and work paths.
+
+The publisher acquires/verifies the original lower once before opening the view,
+keeps that reader through publication and view cleanup, and closes the view
+before releasing its reader. Committed retries do not open or mount a view.
+Normal unmount and removal dispose of the private mount point; failure is a
+partial result and grants no reference-release or source-removal authority.
+Failed view cleanup retains both the cleanup handle and original generation
+reader in a process-owned slot, including failures during view opening. A retry
+must finish that cleanup before acknowledging a receipt or opening another view.
+The slot admits at most one view; concurrent calls refuse immediately, and a
+failed unmount cannot accumulate additional mounts or descriptors.
+
+The command belongs in a dedicated helper mount namespace. Its coordinator must
+prove the exact stopped source's ownership and writer absence, exclude source
+removal and concurrent helpers, observe this helper's exit, and remove a failed
+helper before reconciling a partial cleanup result. These remain coordinator
+responsibilities, not authority inferred from a pin or confirmation flag.
+
+Routine tests cover reader retention through view opening/cleanup, withdrawn
+protection, cleanup errors, receipt retries, frozen recipe bytes, source-path
+aliasing, and exact mount-option refusal. The explicit
+`ACT_TEST_OVERLAY_RECOVERY=1` test runs only in a dedicated privileged Linux
+fixture; ordinary hosts lack mount authority. The executed fixture used a
+private volume, a random 16MiB metacopy payload, changed settings and an
+incomplete install. The helper recovered data and mode, preserved a newer
+completed Node install and the immutable original lower, removed its private
+mount, retained the recovery pin, and reconciled after source disappearance.
+Metadata blocks are still allocated storage: a metacopy inode need not report
+zero allocated blocks even when it has no file-data extents.
+
+This is an act2 filesystem/helper contract. Bosn source ownership/lifetime,
+Docker helper supervision, production routing, dependency release/pins and
+full workflow/large-store acceptance remain separate unfinished integration.

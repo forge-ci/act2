@@ -40,3 +40,29 @@ func (r *ToolRecoveryPublicationReport) fail(err error) {
 func PublishToolRecovery(ctx context.Context, root, source string, pin ToolRecoveryPin, maxBytes int64) ToolRecoveryPublicationReport {
 	return publishToolRecovery(ctx, root, source, pin, maxBytes, syncToolRecoverySelection)
 }
+
+// ToolRecoverySourceView is an exclusively held source view. Close must unmount
+// and dispose of the private view while the original lower reader is still held.
+type ToolRecoverySourceView struct {
+	Path  string
+	Close func() error
+}
+
+// A factory that fails after allocating a view must return its Close handle
+// with the error. Failed cleanup retains that handle and the original reader;
+// subsequent calls retry cleanup before admitting any new view or receipt.
+type ToolRecoverySourceFactory func(context.Context) (ToolRecoverySourceView, error)
+
+// PublishToolRecoveryView opens a source only after admitting exact protection
+// and acquiring/verifying its original lower reader. Completed retries do not
+// open a view. This lets an overlay owner mount/recover under that same reader
+// without a separate validation/hash pass or a gap in lower protection.
+func PublishToolRecoveryView(ctx context.Context, root string, pin ToolRecoveryPin, maxBytes int64, openView ToolRecoverySourceFactory) ToolRecoveryPublicationReport {
+	return publishToolRecoveryView(ctx, root, pin, maxBytes, openView, syncToolRecoverySelection)
+}
+
+func publishToolRecovery(ctx context.Context, root, source string, pin ToolRecoveryPin, maxBytes int64, syncSelection func(string) error) ToolRecoveryPublicationReport {
+	return publishToolRecoveryView(ctx, root, pin, maxBytes, func(context.Context) (ToolRecoverySourceView, error) {
+		return ToolRecoverySourceView{Path: source, Close: func() error { return nil }}, nil
+	}, syncSelection)
+}
