@@ -106,3 +106,18 @@ func TestToolRecoveryFailedCleanupRetainsReader(t *testing.T) {
 		})
 	}
 }
+
+func TestToolRecoveryViewRefusesConcurrentAdmission(t *testing.T) {
+	root, source, pin := toolRecoveryPublicationFixture(t)
+	report := PublishToolRecoveryView(context.Background(), root, pin, 100, func(ctx context.Context) (ToolRecoverySourceView, error) {
+		concurrent := PublishToolRecoveryView(ctx, root, pin, 100, func(context.Context) (ToolRecoverySourceView, error) {
+			t.Fatal("another source must not open while the process owns a view")
+			return ToolRecoverySourceView{}, nil
+		})
+		require.True(t, concurrent.Partial)
+		require.Contains(t, concurrent.Error, "already in use")
+		return ToolRecoverySourceView{Path: source, Close: func() error { return nil }}, nil
+	})
+	require.False(t, report.Partial, report.Error)
+	require.True(t, report.Completed)
+}
