@@ -64,13 +64,20 @@ func publishToolSnapshotExpected(ctx context.Context, source, root string, maxBy
 		report.fail(fmt.Errorf("tool source changed since planning"))
 		return report
 	}
-	completion := report.Completion
 	lease, err := prepareToolSnapshotStore(root)
 	if err != nil {
 		report.fail(err)
 		return report
 	}
 	defer lease.Close()
+	return publishInspectedToolSnapshot(ctx, lease, source, root, maxBytes, report, manifest, data, syncRoot)
+}
+
+// Caller holds the original catalog writer; inspection is reused without a second planning hash.
+func publishInspectedToolSnapshot(ctx context.Context, lease transferLease, source, root string, maxBytes int64, initial ToolSnapshotReport, manifest toolManifest, data []byte, syncRoot func(string) error) (report ToolSnapshotReport) {
+	report = initial
+	completion := report.Completion
+	var err error
 	if _, err = os.Lstat(report.Destination); err == nil {
 		if err = verifyToolObject(ctx, report.Destination, data, completion, maxBytes); err != nil {
 			report.fail(err)

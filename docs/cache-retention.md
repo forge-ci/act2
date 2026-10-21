@@ -504,3 +504,52 @@ and its exact verified install set together under the catalog writer. The
 original command keeps its existing selection-only JSON shape. This observation
 does not hold a reader lease or guarantee the selection will remain current;
 replacement still requires the observed expected generation ID under exclusion.
+
+
+### Post-stop completed-install publication (Bosn #508)
+
+`cache tool-recovery publish --record INTENT --source MERGED --max-bytes N --source-quiescent --apply --cache-server-path STORE`
+is advertised as `tool-recovery-publication-v1` in `--ci-capabilities`. It
+publishes updates from an exclusively held, stopped source's merged overlay
+view. The caller must first prove engine/source ownership and writer absence,
+retain the source volume against deletion, and recover the overlay under its
+original lower. Neither a recovery pin nor the CLI confirmation establishes
+those facts. This command does not mount an overlay or provide Bosn supervision.
+
+An exact unexpired reservation and the original native lower reader protect a
+new publication. The scan admits sibling completion markers at tool/version/arch
+and internal completion markers below the namespace, refuses invalid markers,
+and bounds discovery to 100,000 namespace entries and 256 completed installs.
+Aggregate completed payload, manifest bytes and entries are bounded separately.
+Only installs differing from the original lower update the latest verified warm
+selection under its original catalog writer. Unchanged old installs cannot
+replace another engine's newer install. Incomplete installs do not enter the
+successor; missing/corrupt warm selection refuses rather than bootstrapping.
+Snapshot inspection is reused for publication without a second planning hash;
+source and copied-data verification remain required. Current copy/publication
+still holds the catalog writer and has not been validated at production scale.
+
+Selection and its completion receipt are one fsynced atomic pointer. Any later
+selection archives that exact receipt durably before replacing the pointer.
+An identical retry reconciles the receipt without accessing the source or
+republishing, even after unrelated or same-path successor updates. It never
+releases the pin. The caller must durably record the completion before exact
+reference release and ordinary guarded source-volume removal. A lost directory
+sync acknowledgement is partial until reconciled; partial reports do not grant
+release authority.
+
+Archived receipts are canonical bounded regular records on the store mount,
+with at most 10,000 records. Archival expires at most 32 receipts past their
+original finite reservation lifetime per pass and refuses live overflow.
+Recovery receipts do not introduce indefinite payload pins. Older selection
+readers reject the extended pointer through their existing canonical-schema
+check, so they cannot overwrite an unarchived completion. Ordinary updates by
+this version preserve the receipt before selecting a successor.
+
+Validation covers the actual CLI's previously missing operation, changed versus
+unchanged lower installs, incomplete installs, newer same-path publications
+before a lost-reply retry, selection-sync uncertainty, exact-intent conflicts,
+missing protection, cancellation, corrupt lower/selection/receipt state, metadata
+bounds and a full 10,000-receipt overflow/expiry fixture. This is an act2 helper
+contract; Bosn's live helper mounts, source lifetime exclusion, runtime routing,
+restart recovery and full workflow/large-store acceptance remain unfinished.

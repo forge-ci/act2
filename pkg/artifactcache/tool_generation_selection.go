@@ -5,8 +5,9 @@ import "context"
 // ToolGenerationSelection names the selected warm generation. Planning callers
 // must still acquire its reader lease before mounting: this value is not a lease.
 type ToolGenerationSelection struct {
-	SchemaVersion int    `json:"schema_version"`
-	ID            string `json:"id"`
+	SchemaVersion int                     `json:"schema_version"`
+	ID            string                  `json:"id"`
+	Recovery      *ToolRecoveryCompletion `json:"recovery,omitempty"`
 }
 
 // ToolGenerationUpdateReport separates closed generation publication from
