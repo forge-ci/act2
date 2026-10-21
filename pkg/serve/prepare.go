@@ -146,24 +146,31 @@ func (s *Server) readyStamp() string {
 // prepareToolcache seeds the tool-cache volume, or mounts a generation's
 // overlay, once per engine.
 func (s *Server) prepareToolcache(ctx context.Context, generation *ToolGeneration) (string, error) {
-	if done, err := os.ReadFile(s.readyStamp()); err == nil {
-		return string(done), nil
+	wanted, err := s.toolcacheReady(generation)
+	if err != nil {
+		return "", err
 	}
-	mode, script := "seeded", toolcacheSeedScript
-	if generation != nil {
-		if !generationID.MatchString(generation.ID) || !filepath.IsAbs(generation.Store) {
-			return "", errors.New("tool generation: invalid id or store")
+	encoded, err := json.Marshal(wanted)
+	if err != nil || len(encoded) > toolcacheReadyLimit {
+		return "", errors.New("tool cache readiness exceeds bound")
+	}
+	if done, err := s.preparedToolcache(); err == nil {
+		if !done.matches(wanted) {
+			return "", errors.New("tool cache is already prepared for a different frozen binding")
 		}
-		recipe := OverlayRecipe(generation.Store, s.cfg.ToolCacheMount)
-		if digestOf([]byte(recipe)) != "sha256:"+strings.TrimPrefix(generation.OverlayRecipeSHA256, "sha256:") {
-			return "", errors.New("tool overlay recipe differs from frozen producer")
-		}
-		mode, script = "generation "+generation.ID, strings.ReplaceAll(recipe, "@GENERATION@", generation.ID)
+		return wanted.description(), nil
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("tool cache readiness: %w", err)
+	}
+	script := toolcacheSeedScript
+	if wanted.Generation != nil {
+		recipe := OverlayRecipe(wanted.Generation.Store, s.cfg.ToolCacheMount)
+		script = strings.ReplaceAll(recipe, "@GENERATION@", wanted.Generation.ID)
 	}
 	if _, err := shell(ctx, script, s.toolcacheEnv()); err != nil {
 		return "", fmt.Errorf("tool cache: %w", err)
 	}
-	return mode, os.WriteFile(s.readyStamp(), []byte(mode), 0o600)
+	return wanted.description(), os.WriteFile(s.readyStamp(), encoded, 0o600)
 }
 
 func (s *Server) prepare(w http.ResponseWriter, r *http.Request) {
