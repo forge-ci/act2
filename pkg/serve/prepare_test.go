@@ -113,6 +113,30 @@ func TestTheOverlayRecipeIsFrozenPerStoreAndTarget(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestPreparedToolCacheRefusesADifferentModeOrUnverifiableGeneration(t *testing.T) {
+	for _, scenario := range []string{"seed-to-generation", "generation-to-seed", "generation-without-binding"} {
+		t.Run(scenario, func(t *testing.T) {
+			s, _, _ := saveServer(t)
+			s.cfg.Socket = filepath.Join(t.TempDir(), "serve.sock")
+			stamp := "generation " + strings.Repeat("a", 64)
+			generation := &ToolGeneration{ID: strings.Repeat("b", 64), Store: "/store"}
+			generation.OverlayRecipeSHA256 = digestOf([]byte(OverlayRecipe(generation.Store, s.cfg.ToolCacheMount)))
+			if scenario == "seed-to-generation" {
+				stamp = "seeded"
+			}
+			if scenario == "generation-to-seed" {
+				generation = nil
+			}
+			write(t, s.readyStamp(), stamp)
+			_, err := s.prepareToolcache(context.Background(), generation)
+			require.Error(t, err, "a ready stamp cannot silently authorize another cache binding")
+			after, err := os.ReadFile(s.readyStamp())
+			require.NoError(t, err)
+			require.Equal(t, stamp, string(after), "refusal preserves the prepared cache")
+		})
+	}
+}
+
 func TestTheCacheBudgetPrunesCoordinatedNamespacesUnderTheLock(t *testing.T) {
 	dir := t.TempDir()
 	act := filepath.Join(dir, "act")

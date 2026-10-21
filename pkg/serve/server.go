@@ -171,8 +171,8 @@ func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 	health := Health{Protocol: ProtocolVersion, Version: s.cfg.Version, MaxRuns: s.cfg.MaxRuns, Runs: runs,
 		DockerProxy: s.cfg.ProxyDir != "", Image: s.image, CacheBudget: s.budget}
 	s.mu.Unlock()
-	if done, err := os.ReadFile(s.readyStamp()); err == nil {
-		health.ToolCache = string(done)
+	if done, err := s.preparedToolcache(); err == nil {
+		health.ToolCache = done.description()
 	}
 	reply(w, http.StatusOK, health)
 }

@@ -23,8 +23,23 @@ if [ -n "$4" ]; then
 fi
 # Restored completed installs can belong to the preceding root runner.
 # Reconcile only the runner's tool and action stores, never arbitrary binds.
+owner_uid=$(id -u actrunner)
+owner_gid=$(id -g actrunner)
 for store in "$2" "$3"; do
-  [ -z "$store" ] || chown -R actrunner:$(id -gn actrunner) "$store"
+  [ -n "$store" ] || continue
+  [ -d "$store" ] && [ ! -L "$store" ] || exit 1
+  # Other jobs can remove temporary files during the walk. Ignore only entries
+  # proven absent after chown fails; existing files and dangling links still
+  # fail closed. Do not traverse symlinks or rewrite already-owned cache data.
+  find "$store" -ignore_readdir_race \( ! -uid "$owner_uid" -o ! -gid "$owner_gid" \) \
+    -exec sh -ec '
+      owner=$1; shift
+      for entry do
+        if ! chown -h -- "$owner" "$entry"; then
+          [ ! -e "$entry" ] && [ ! -L "$entry" ] || exit 1
+        fi
+      done
+    ' act-cache-owner "$owner_uid:$owner_gid" {} +
 done
 if command -v sudo >/dev/null; then
   mkdir -p /etc/sudoers.d
