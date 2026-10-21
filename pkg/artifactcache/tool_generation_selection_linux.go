@@ -56,6 +56,10 @@ func updateToolGenerationWithMode(ctx context.Context, root string, updates Tool
 	}
 	defer catalog.Close()
 	selection, err := readToolGenerationSelection(root)
+	if archiveErr := archiveSelectedToolRecovery(ctx, catalog, root, selection, err); archiveErr != nil {
+		report.fail(archiveErr)
+		return report
+	}
 	var installs []ToolGenerationInstall
 	if err == nil {
 		if mode == toolSelectionInitialize {
@@ -139,7 +143,7 @@ func readToolGenerationSelection(root string) (ToolGenerationSelection, error) {
 	if err != nil {
 		return selection, err
 	}
-	if !info.Mode().IsRegular() || info.Size() > 512 {
+	if !info.Mode().IsRegular() || info.Size() > 2048 {
 		return selection, fmt.Errorf("current tool generation must be a bounded regular selection")
 	}
 	data, err := os.ReadFile(path)
@@ -155,6 +159,11 @@ func readToolGenerationSelection(root string) (ToolGenerationSelection, error) {
 	}
 	if err := validateToolInstall(ToolGenerationInstall{Path: "selection", ObjectID: selection.ID}); err != nil {
 		return selection, err
+	}
+	if selection.Recovery != nil {
+		if err := selection.Recovery.validate(); err != nil || selection.Recovery.Generation != selection.ID {
+			return selection, fmt.Errorf("current tool recovery completion is invalid")
+		}
 	}
 	return selection, nil
 }
