@@ -159,7 +159,22 @@ func (e *HostEnvironment) GetContainerArchive(ctx context.Context, srcPath strin
 			SrcPrefix: srcPrefix,
 			Handler:   tc,
 		}
-		err = filepath.Walk(srcPath, fc.CollectFiles(ctx, []string{}))
+		collect := fc.CollectFiles(ctx, []string{})
+		err = filepath.Walk(srcPath, func(file string, info os.FileInfo, walkErr error) error {
+			if walkErr == nil && info.IsDir() && file != srcPath {
+				if ctx != nil {
+					if err := ctx.Err(); err != nil {
+						return err
+					}
+				}
+				relative, err := filepath.Rel(srcPath, file)
+				if err != nil {
+					return err
+				}
+				return tc.WriteFile(filepath.ToSlash(relative), info, "", nil)
+			}
+			return collect(file, info, walkErr)
+		})
 		if err != nil {
 			return nil, err
 		}
