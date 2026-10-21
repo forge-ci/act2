@@ -2,8 +2,8 @@ set -eu
 store=@STORE@
 generation=@GENERATION@
 target=@TARGET@
-upper=/var/lib/docker/bosn-tools-upper
-work=/var/lib/docker/bosn-tools-work
+upper=@UPPER@
+work=@WORK@
 reader="$store/.tool-generations-v1/$generation/.readers-v1.bolt"
 lower="$store/.tool-generations-v1/$generation/tree"
 # Check the live original reader before exposing its protected lower tree.

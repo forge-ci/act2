@@ -50,7 +50,7 @@ func reconcileToolRecovery(root string, selection ToolGenerationSelection, pin T
 	return &report, nil
 }
 
-func publishToolRecovery(ctx context.Context, root, source string, pin ToolRecoveryPin, maxBytes int64, syncSelection func(string) error) (report ToolRecoveryPublicationReport) {
+func publishToolRecoveryView(ctx context.Context, root string, pin ToolRecoveryPin, maxBytes int64, openView ToolRecoverySourceFactory, syncSelection func(string) error) (report ToolRecoveryPublicationReport) {
 	report = ToolRecoveryPublicationReport{SchemaVersion: 1, Root: root, Pin: pin}
 	ctx, cancel := context.WithTimeout(ctx, 180*time.Second)
 	defer cancel()
@@ -73,7 +73,25 @@ func publishToolRecovery(ctx context.Context, root, source string, pin ToolRecov
 		report.fail(err)
 		return report
 	}
-	plans, err := inspectToolRecoveryUpdates(ctx, root, source, original.Installs, maxBytes)
+	if openView == nil {
+		report.fail(fmt.Errorf("recovery source factory missing"))
+		return report
+	}
+	view, err := openView(ctx)
+	if err != nil {
+		report.fail(err)
+		return report
+	}
+	if view.Close == nil {
+		report.fail(fmt.Errorf("recovery source closer missing"))
+		return report
+	}
+	defer func() {
+		if err := view.Close(); err != nil {
+			report.fail(fmt.Errorf("recovery view cleanup: %w", err))
+		}
+	}()
+	plans, err := inspectToolRecoveryUpdates(ctx, root, view.Path, original.Installs, maxBytes)
 	if err != nil {
 		report.fail(err)
 		return report
