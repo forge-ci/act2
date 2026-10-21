@@ -237,6 +237,7 @@ func TestCloseSavesTheToolCacheOnlyAfterACleanExit(t *testing.T) {
 	dir := t.TempDir()
 	client, _ := startWith(t, 2, func(c *Config) {
 		c.ToolCacheStore, c.ToolCacheVolume, c.ToolCacheMount = filepath.Join(dir, "store"), "act-toolcache", filepath.Join(dir, "volume")
+		write(t, filepath.Join(filepath.Dir(c.Socket), "toolcache.ready"), "seeded")
 	})
 	for _, run := range []string{runA, runB} {
 		_, err := client.Admit(ctx, AdmitRequest{RunID: run, Limits: limits})

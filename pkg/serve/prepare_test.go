@@ -4,6 +4,7 @@ package serve
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -60,7 +61,9 @@ func saveServer(t *testing.T) (*Server, string, string) {
 	dir := t.TempDir()
 	src, store := filepath.Join(dir, "volume"), filepath.Join(dir, "store")
 	require.NoError(t, os.MkdirAll(src, 0o755))
-	return &Server{cfg: Config{ToolCacheStore: store, ToolCacheVolume: "act-toolcache", ToolCacheMount: src}}, src, store
+	s := &Server{cfg: Config{Socket: filepath.Join(dir, "serve.sock"), ToolCacheStore: store, ToolCacheVolume: "act-toolcache", ToolCacheMount: src}}
+	write(t, s.readyStamp(), "seeded")
+	return s, src, store
 }
 
 func TestSavingTheToolCacheKeepsOnlyCompletePristineInstallsOnce(t *testing.T) {
@@ -161,4 +164,36 @@ func TestTheCacheBudgetPrunesCoordinatedNamespacesUnderTheLock(t *testing.T) {
 	require.NoError(t, holder.Start())
 	defer func() { _ = holder.Process.Kill(); _ = holder.Wait() }()
 	require.Eventually(t, func() bool { return runBudgetPass(context.Background(), act, budget).Status == "busy" }, 3*time.Second, 50*time.Millisecond)
+}
+
+// Bosn #508: a native lower must never flow through the uncoordinated legacy saver.
+func TestSavingANativeToolCachePreservesItsStoreForPostStopRecovery(t *testing.T) {
+	for _, stamp := range []string{"native", "unverifiable", "corrupt"} {
+		t.Run(stamp, func(t *testing.T) {
+			s, src, store := saveServer(t)
+			s.cfg.Socket = filepath.Join(t.TempDir(), "serve.sock")
+			generation := &ToolGeneration{ID: strings.Repeat("a", 64), Store: store}
+			generation.OverlayRecipeSHA256 = digestOf([]byte(OverlayRecipe(store, src)))
+			ready, err := s.toolcacheReady(generation)
+			require.NoError(t, err)
+			data, err := json.Marshal(ready)
+			require.NoError(t, err)
+			if stamp == "unverifiable" {
+				data = []byte("generation " + generation.ID)
+			}
+			if stamp == "corrupt" {
+				data = []byte("{broken")
+			}
+			write(t, s.readyStamp(), string(data))
+			write(t, filepath.Join(src, "Python/3/x64/python"), "completed update")
+			past := time.Now().Add(-time.Minute)
+			require.NoError(t, os.Chtimes(filepath.Join(src, "Python/3/x64/python"), past, past))
+			write(t, filepath.Join(src, "Python/3/x64.complete"), "")
+			result := s.saveToolcache(context.Background())
+			assert.False(t, result.Saved, "legacy saving must not claim native publication")
+			assert.NotEmpty(t, result.Note)
+			assert.NoDirExists(t, store, "refusal must precede creation or mutation of the legacy store")
+			assert.FileExists(t, filepath.Join(src, "Python/3/x64/python"), "recovery source remains intact")
+		})
+	}
 }

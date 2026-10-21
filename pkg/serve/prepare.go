@@ -223,6 +223,17 @@ func (s *Server) saveToolcache(ctx context.Context) *ToolCacheSave {
 	defer cancel()
 	s.toolMu.Lock()
 	defer s.toolMu.Unlock()
+	ready, err := s.preparedToolcache()
+	if err != nil {
+		return &ToolCacheSave{Note: "tool cache readiness: " + err.Error()}
+	}
+	if ready.Generation != nil {
+		// Other admitted runs may still write this overlay. The legacy saver has
+		// neither native catalog authority nor a source-stop proof. Keep the source
+		// for the owner's post-stop native recovery instead of copying it into the
+		// legacy namespace or claiming a native publication.
+		return &ToolCacheSave{Note: "native tool cache requires post-stop recovery"}
+	}
 	if _, err := shell(ctx, toolcacheSaveScript, s.toolcacheEnv()); err != nil {
 		if ctx.Err() != nil {
 			return &ToolCacheSave{Note: "timed out"}
