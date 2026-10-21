@@ -557,6 +557,10 @@ func (rc *RunContext) ApplyExtraPath(ctx context.Context, env *map[string]string
 }
 
 func (rc *RunContext) UpdateExtraPath(ctx context.Context, githubEnvPath string) error {
+	return rc.updateExtraPath(ctx, githubEnvPath, false)
+}
+
+func (rc *RunContext) updateExtraPath(ctx context.Context, githubEnvPath string, fromDocker bool) error {
 	if common.Dryrun(ctx) {
 		return nil
 	}
@@ -584,6 +588,9 @@ func (rc *RunContext) UpdateExtraPath(ctx context.Context, githubEnvPath string)
 			}
 		}
 		if len(line) > 0 {
+			if fromDocker {
+				line = hostDockerPathToHost(rc, line)
+			}
 			rc.addPath(ctx, line)
 		}
 	}

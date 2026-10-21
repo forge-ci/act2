@@ -84,3 +84,30 @@ func hostDockerEnv(rc *RunContext, key, value string) string {
 	}
 	return value
 }
+
+// A Docker action publishes paths in its own workspace namespace. Only its
+// GITHUB_PATH entries are translated back; native steps keep their literals.
+func hostDockerPathToHost(rc *RunContext, value string) string {
+	for _, path := range newHostDockerTransfer(rc).paths {
+		if value == path.action {
+			return path.host
+		}
+		if strings.HasPrefix(value, path.action+"/") {
+			return path.host + strings.TrimPrefix(value, path.action)
+		}
+	}
+	return value
+}
+
+func stepUsesDocker(s step) bool {
+	switch action := s.(type) {
+	case *stepDocker:
+		return true
+	case *stepActionLocal:
+		return action.action != nil && action.action.Runs.Using.IsDocker()
+	case *stepActionRemote:
+		return action.action != nil && action.action.Runs.Using.IsDocker()
+	default:
+		return false
+	}
+}
