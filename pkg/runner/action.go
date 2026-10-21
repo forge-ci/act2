@@ -653,10 +653,10 @@ func runPostStep(step actionStep) common.Executor {
 
 		actionName, containerActionDir := getContainerActionPaths(stepModel, actionLocation, rc)
 
+		populateEnvsFromSavedState(step.getEnv(), step, rc)
 		x := action.Runs.Using
 		switch {
 		case x.IsNode():
-			populateEnvsFromSavedState(step.getEnv(), step, rc)
 			populateEnvsFromInput(ctx, step.getEnv(), step.getActionModel(), rc)
 
 			containerArgs := []string{rc.GetNodeToolFullPath(ctx), path.Join(containerActionDir, action.Runs.Post)}
