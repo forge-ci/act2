@@ -72,7 +72,7 @@ func hostDockerEnv(rc *RunContext, key, value string) string {
 		return value
 	}
 	switch key {
-	case "GITHUB_WORKSPACE", "GITHUB_ACTION_PATH", "GITHUB_ENV", "GITHUB_OUTPUT", "GITHUB_STATE", "GITHUB_PATH", "GITHUB_STEP_SUMMARY":
+	case "GITHUB_WORKSPACE", "GITHUB_ACTION_PATH", "GITHUB_EVENT_PATH", "GITHUB_ENV", "GITHUB_OUTPUT", "GITHUB_STATE", "GITHUB_PATH", "GITHUB_STEP_SUMMARY":
 		for _, path := range newHostDockerTransfer(rc).paths {
 			if value == path.host {
 				return path.action
