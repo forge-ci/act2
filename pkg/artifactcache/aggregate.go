@@ -57,6 +57,10 @@ func MaintainCohort(ctx context.Context, root string, maxBytes int64, policy Pol
 		return report
 	}
 	defer lease.Close()
+	if err := reclaimCohortArchiveSources(ctx, root); err != nil {
+		report.fail(fmt.Errorf("archive source reclamation: %w", err))
+		return report
+	}
 	stores, err := openCohort(ctx, root, policy)
 	if err != nil {
 		report.fail(err)

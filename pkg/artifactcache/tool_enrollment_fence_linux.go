@@ -89,7 +89,7 @@ func requireToolEnrollmentSourceFence(history toolEnrollmentHistory) error {
 }
 
 func requireToolEnrollmentDirectory(path, parent string) error {
-	info, err := os.Lstat(path)
+	info, err := lstatInParent(path)
 	if err != nil || !info.IsDir() {
 		return fmt.Errorf("enrollment source snapshot is missing or not a directory: %v", err)
 	}

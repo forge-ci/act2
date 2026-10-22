@@ -5,11 +5,8 @@ package artifactcache
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
-
-	"golang.org/x/sys/unix"
 )
 
 const archiveStageMarker = ".archive-import-stage-v1"
@@ -76,49 +73,5 @@ func reclaimArchiveStage(ctx context.Context, h *archiveEnrollmentHistory) error
 	return reclaimArchiveStageWithBudget(ctx, h, 100000)
 }
 func reclaimArchiveStageWithBudget(ctx context.Context, h *archiveEnrollmentHistory, budget int) error {
-	fd, err := unix.Open(h.stage(), unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
-	if err != nil {
-		return err
-	}
-	file := os.NewFile(uintptr(fd), h.stage())
-	defer file.Close()
-	anchored := fmt.Sprintf("/proc/self/fd/%d/", fd)
-	if err = requireToolEnrollmentMarker(anchored, archiveStageMarker, archiveFenceBytes(h)); err != nil {
-		return err
-	}
-	mount, err := enrollmentReclaimMount(fd)
-	if err != nil {
-		return err
-	}
-	parentMount, err := toolMountID(h.Root)
-	if err != nil || mount != parentMount {
-		return fmt.Errorf("archive stage crosses a mount boundary: %v", err)
-	}
-	// One attempt traverses at most 100,000 entries. Partial removal retains
-	// the root witness and resumes next time; nesting uses the bounded FD walker.
-	for budget > 0 {
-		done, err := reclaimEnrollmentDirectory(ctx, file, fd, mount, 0, &budget, archiveStageMarker)
-		if err != nil {
-			return err
-		}
-		if done {
-			if _, err = file.Seek(0, io.SeekStart); err != nil {
-				return err
-			}
-			names, err := file.Readdirnames(2)
-			if err != nil && err != io.EOF {
-				return err
-			}
-			if len(names) == 1 && names[0] == archiveStageMarker {
-				return file.Sync()
-			}
-			if len(names) == 0 {
-				return fmt.Errorf("archive stage lost its ownership witness")
-			}
-		}
-		if _, err = file.Seek(0, io.SeekStart); err != nil {
-			return err
-		}
-	}
-	return errArchiveStageBudgetPending
+	return (enrollmentReclaimRoot{path: h.stage(), parent: h.Root, marker: archiveStageMarker, identity: archiveFenceBytes(h), pending: errArchiveStageBudgetPending}).reclaim(ctx, budget)
 }

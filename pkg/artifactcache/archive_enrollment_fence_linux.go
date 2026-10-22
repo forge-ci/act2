@@ -20,7 +20,7 @@ func requireArchiveFence(h *archiveEnrollmentHistory) error {
 }
 func requireArchiveSnapshot(h *archiveEnrollmentHistory) error {
 	if !h.SourcePresent && !h.ImportStarted && !h.Ready {
-		if _, err := os.Lstat(h.snapshot()); os.IsNotExist(err) {
+		if _, err := lstatInParent(h.snapshot()); os.IsNotExist(err) {
 			return nil
 		}
 	}

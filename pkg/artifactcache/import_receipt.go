@@ -76,23 +76,31 @@ func ReadImportPublicationReceipt(dir string) (ImportPublicationReceipt, error) 
 	if err != nil {
 		return receipt, err
 	}
-	info, err := os.Lstat(namespace)
+	info, err := lstatInParent(namespace)
 	if err != nil || !info.IsDir() {
 		return receipt, fmt.Errorf("import namespace is not a readable directory")
+	}
+	directory, err := os.OpenRoot(namespace)
+	if err != nil {
+		return receipt, err
+	}
+	defer directory.Close()
+	openedDirectory, err := directory.Stat(".")
+	if err != nil || !os.SameFile(info, openedDirectory) {
+		return receipt, fmt.Errorf("import namespace changed while opening")
 	}
 	marker, err := readCohortMarker(filepath.Join(namespace, cohortMarker))
 	if err != nil || string(marker) != cohortIdentity {
 		return receipt, fmt.Errorf("import namespace has no supported cohort marker")
 	}
-	path := filepath.Join(namespace, importReceiptFile)
-	info, err = os.Lstat(path)
+	info, err = directory.Lstat(importReceiptFile)
 	if err != nil {
 		return receipt, err
 	}
 	if !info.Mode().IsRegular() || info.Size() > importReceiptLimit {
 		return receipt, fmt.Errorf("import receipt is not a bounded regular file")
 	}
-	file, err := os.Open(path)
+	file, err := directory.Open(importReceiptFile)
 	if err != nil {
 		return receipt, err
 	}

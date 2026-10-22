@@ -40,6 +40,11 @@ func enrollArchive(ctx context.Context, report *ArchiveEnrollmentReport, phase A
 		if err = validateArchiveDestination(ctx, h); err != nil {
 			return err
 		}
+		if phase == ArchiveEnrollmentComplete {
+			if err = reclaimArchiveSource(ctx, h); err != nil {
+				return err
+			}
+		}
 		report.Ready = true
 		return nil
 	}
@@ -50,6 +55,9 @@ func enrollArchive(ctx context.Context, report *ArchiveEnrollmentReport, phase A
 		return err
 	}
 	if err = finishInitialArchiveEnrollment(ctx, db, h); err != nil {
+		return err
+	}
+	if err = reclaimArchiveSource(ctx, h); err != nil {
 		return err
 	}
 	report.Ready = true
