@@ -55,24 +55,10 @@ func loadArchiveHistory(ctx context.Context, report *ArchiveEnrollmentReport, cr
 	if err != nil {
 		return nil, nil, err
 	}
-	var h *archiveEnrollmentHistory
-	err = db.View(func(tx *bbolt.Tx) error {
-		b := tx.Bucket([]byte("archive-enrollment-v1"))
-		if b == nil {
-			return nil
-		}
-		data := b.Get([]byte("history"))
-		var row archiveEnrollmentHistory
-		if len(data) > 16384 || json.Unmarshal(data, &row) != nil {
-			return fmt.Errorf("archive enrollment history invalid")
-		}
-		canonical, e := json.Marshal(row)
-		if e != nil || !bytes.Equal(data, canonical) || row.SchemaVersion != 1 || row.Source != report.Source || row.Root != report.Root || row.Namespace != report.Namespace || row.MaxBytes != report.MaxBytes || !receiptDigest(row.Identity) || !row.Cold && !row.SourcePresent {
-			return fmt.Errorf("archive enrollment history identity or policy differs")
-		}
-		h = &row
-		return nil
-	})
+	h, err := readArchiveHistory(db)
+	if err == nil && h != nil && (h.Source != report.Source || h.Root != report.Root || h.Namespace != report.Namespace || h.MaxBytes != report.MaxBytes) {
+		err = fmt.Errorf("archive enrollment history identity or policy differs")
+	}
 	if err == nil && h == nil {
 		if !create || !fresh {
 			err = fmt.Errorf("archive enrollment history is missing")
@@ -85,6 +71,27 @@ func loadArchiveHistory(ctx context.Context, report *ArchiveEnrollmentReport, cr
 		return nil, nil, err
 	}
 	return db, h, nil
+}
+func readArchiveHistory(db *bbolt.DB) (*archiveEnrollmentHistory, error) {
+	var history *archiveEnrollmentHistory
+	err := db.View(func(tx *bbolt.Tx) error {
+		b := tx.Bucket([]byte("archive-enrollment-v1"))
+		if b == nil {
+			return nil
+		}
+		data := b.Get([]byte("history"))
+		var row archiveEnrollmentHistory
+		if len(data) > 16384 || json.Unmarshal(data, &row) != nil {
+			return fmt.Errorf("archive enrollment history invalid")
+		}
+		canonical, err := json.Marshal(row)
+		if err != nil || !bytes.Equal(data, canonical) || row.SchemaVersion != 1 || row.MaxBytes <= 0 || !receiptDigest(row.Identity) || !row.Cold && !row.SourcePresent {
+			return fmt.Errorf("archive enrollment history identity or policy differs")
+		}
+		history = &row
+		return nil
+	})
+	return history, err
 }
 func beginArchiveHistory(db *bbolt.DB, r *ArchiveEnrollmentReport) (*archiveEnrollmentHistory, error) {
 	if _, err := os.Lstat(filepath.Join(r.Root, r.Namespace)); !os.IsNotExist(err) {

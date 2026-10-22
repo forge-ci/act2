@@ -13,7 +13,8 @@ var errArchiveStageBudgetPending = errors.New("archive stage reclamation entry b
 // ArchiveEnrollmentReport separates persistent source fencing from publication.
 // A fence does not stop processes with existing directory descriptors. Complete
 // requires the caller to keep all such writers stopped until this call returns.
-// Retained source data is never deleted by enrollment.
+// Once Ready is durable, Complete reclaims the fenced source payload. Require
+// only validates; idle cohort maintenance resumes interrupted source cleanup.
 type ArchiveEnrollmentReport struct {
 	Retryable     bool   `json:"retryable"`
 	SchemaVersion int    `json:"schema_version"`
@@ -42,7 +43,7 @@ func EnrollArchive(ctx context.Context, source, root, namespace string, maxBytes
 	report := ArchiveEnrollmentReport{SchemaVersion: 1, Source: source, Root: root, Namespace: namespace, MaxBytes: maxBytes}
 	if err := enrollArchive(ctx, &report, phase); err != nil {
 		report.Partial = true
-		report.Retryable = errors.Is(err, boltErrors.ErrTimeout) || errors.Is(err, errArchiveStageBudgetPending)
+		report.Retryable = errors.Is(err, boltErrors.ErrTimeout) || errors.Is(err, errArchiveStageBudgetPending) || archiveSourceReclamationPending(err)
 		detail := []rune(err.Error())
 		if len(detail) > 256 {
 			detail = detail[:256]
