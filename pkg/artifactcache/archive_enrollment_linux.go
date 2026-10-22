@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"go.etcd.io/bbolt"
+	boltErrors "go.etcd.io/bbolt/errors"
 )
 
 func enrollArchive(ctx context.Context, report *ArchiveEnrollmentReport, phase ArchiveEnrollmentPhase) error {
@@ -90,9 +91,6 @@ func publishArchiveDestination(ctx context.Context, db *bbolt.DB, h *archiveEnro
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-	if h.ImportStarted {
-		return fmt.Errorf("unacknowledged archive import has no destination; explicit stage reconciliation required")
-	}
 	if h.Cold {
 		if err := prepareColdArchiveSource(ctx, h); err != nil {
 			return err
@@ -102,7 +100,7 @@ func publishArchiveDestination(ctx context.Context, db *bbolt.DB, h *archiveEnro
 	if err := storeArchiveHistory(db, h); err != nil {
 		return err
 	}
-	result := ImportCompleted(ctx, h.snapshot(), h.Root, h.Namespace, h.MaxBytes)
+	result := importCompletedWithStages(ctx, h.snapshot(), h.Root, h.Namespace, h.MaxBytes, archiveImportStages(ctx, h))
 	if !result.Published && result.PendingStage == "" {
 		h.ImportStarted = false
 		if err := storeArchiveHistory(db, h); err != nil {
@@ -110,6 +108,9 @@ func publishArchiveDestination(ctx context.Context, db *bbolt.DB, h *archiveEnro
 		}
 	}
 	if result.Partial || !result.Published {
+		if result.cause != nil {
+			return fmt.Errorf("archive import remains incomplete: %w", result.cause)
+		}
 		return fmt.Errorf("archive import remains incomplete: %s", result.Error)
 	}
 	return nil
@@ -168,6 +169,9 @@ func validateArchiveDestination(ctx context.Context, h *archiveEnrollmentHistory
 		return fmt.Errorf("archive publication receipt differs from frozen intent")
 	}
 	audit := AuditStore(ctx, filepath.Join(h.Root, h.Namespace), 0)
+	if audit.Status == StoreBusy {
+		return fmt.Errorf("current archive destination busy: %w", boltErrors.ErrTimeout)
+	}
 	if audit.Partial || audit.Status != StoreReady || audit.ArchiveBytes == nil || audit.EntryCount == nil {
 		return fmt.Errorf("current archive destination inventory is unavailable")
 	}

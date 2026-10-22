@@ -8,11 +8,14 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"go.etcd.io/bbolt"
+	boltErrors "go.etcd.io/bbolt/errors"
 )
 
 type archiveEnrollmentHistory struct {
@@ -48,7 +51,7 @@ func storeArchiveHistory(db *bbolt.DB, h *archiveEnrollmentHistory) error {
 	})
 }
 func loadArchiveHistory(ctx context.Context, report *ArchiveEnrollmentReport, create bool) (*bbolt.DB, *archiveEnrollmentHistory, error) {
-	db, fresh, err := openEnrollmentHistoryFile(ctx, archiveHistoryPath(report.Source), create)
+	db, fresh, err := openArchiveHistory(ctx, report.Source, create)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -108,4 +111,14 @@ func beginArchiveHistory(db *bbolt.DB, r *ArchiveEnrollmentReport) (*archiveEnro
 		return nil, err
 	}
 	return h, nil
+}
+
+func openArchiveHistory(ctx context.Context, source string, create bool) (*bbolt.DB, bool, error) {
+	lockContext, cancel := context.WithTimeout(ctx, 250*time.Millisecond)
+	db, fresh, err := openEnrollmentHistoryFile(lockContext, archiveHistoryPath(source), create)
+	cancel()
+	if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+		err = fmt.Errorf("archive enrollment history busy: %w", boltErrors.ErrTimeout)
+	}
+	return db, fresh, err
 }

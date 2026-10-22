@@ -125,19 +125,14 @@ func TestArchiveEnrollmentRejectsPolicyChangesAndUnownedDestinations(t *testing.
 	require.False(t, r.Ready, "directory existence is not publication evidence")
 }
 
-func TestArchiveEnrollmentRefusesRecreatedWarmMetadataAndUnknownImportRetry(t *testing.T) {
+func TestArchiveEnrollmentRefusesRecreatedWarmMetadata(t *testing.T) {
 	source, root := archiveEnrollmentFixture(t, 1)
 	enrollArchiveTest(t, source, root, ArchiveEnrollmentFence)
 	report := ArchiveEnrollmentReport{Source: source, Root: root, Namespace: "repo", MaxBytes: 160}
 	db, h, err := loadArchiveHistory(context.Background(), &report, false)
 	require.NoError(t, err)
-	h.ImportStarted = true
-	require.NoError(t, storeArchiveHistory(db, h))
 	require.NoError(t, db.Close())
-	refused := EnrollArchive(context.Background(), source, root, "repo", 160, ArchiveEnrollmentComplete)
-	require.True(t, refused.Partial)
-	require.Contains(t, refused.Error, "explicit stage reconciliation")
-	// Simulate recovering the original publication, not restarting an unknown copy.
+	// Simulate a lost publication reply before testing recreated metadata.
 	imported := ImportCompleted(context.Background(), h.snapshot(), root, "repo", 160)
 	require.False(t, imported.Partial, imported.Error)
 	require.True(t, enrollArchiveTest(t, source, root, ArchiveEnrollmentComplete).Ready)
@@ -146,7 +141,7 @@ func TestArchiveEnrollmentRefusesRecreatedWarmMetadataAndUnknownImportRetry(t *t
 	empty, err := (&Handler{dir: filepath.Join(root, "repo")}).openDB()
 	require.NoError(t, err)
 	require.NoError(t, empty.Close())
-	refused = EnrollArchive(context.Background(), source, root, "repo", 160, ArchiveEnrollmentRequire)
+	refused := EnrollArchive(context.Background(), source, root, "repo", 160, ArchiveEnrollmentRequire)
 	require.True(t, refused.Partial)
 	require.Contains(t, refused.Error, "incarnation")
 }
@@ -211,4 +206,18 @@ func TestArchiveEnrollmentLostImportReplyCannotBlessReplacedWarmInventory(t *tes
 	report := EnrollArchive(context.Background(), source, root, "repo", 160, ArchiveEnrollmentComplete)
 	require.True(t, report.Partial, "a valid empty store cannot replace the unacknowledged warm publication")
 	require.False(t, report.Ready)
+}
+
+func TestArchiveEnrollmentResumesIntentBeforePrivateStageCreation(t *testing.T) {
+	source, root := archiveEnrollmentFixture(t, 1)
+	enrollArchiveTest(t, source, root, ArchiveEnrollmentFence)
+	report := ArchiveEnrollmentReport{Source: source, Root: root, Namespace: "repo", MaxBytes: 160}
+	db, h, err := loadArchiveHistory(context.Background(), &report, false)
+	require.NoError(t, err)
+	h.ImportStarted = true
+	require.NoError(t, storeArchiveHistory(db, h))
+	require.NoError(t, db.Close())
+	recovered := EnrollArchive(context.Background(), source, root, "repo", 160, ArchiveEnrollmentComplete)
+	require.False(t, recovered.Partial, recovered.Error)
+	require.True(t, recovered.Ready, "durable intent before stage creation must recover without manual repair")
 }
