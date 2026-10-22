@@ -53,6 +53,7 @@ func newCacheCommand(ctx context.Context, input *Input) *cobra.Command {
 	cohort.Flags().DurationVar(&cohortWatch, "watch", 0, "Retry aggregate maintenance periodically, including incomplete or busy passes; emits one JSON report per pass")
 	cohort.Flags().BoolVar(&cohortApply, "apply", false, "Apply age, namespace and aggregate retention to this cohort")
 	cache.AddCommand(audit, prune, cohort, newCacheImportCommand(ctx, input), newCacheImportReceiptCommand(input), newCacheToolSnapshotCommand(ctx, input), newCacheToolBootstrapCommand(ctx, input), newCacheToolGenerationCommand(ctx, input), newCacheToolExecCommand(ctx, input), newCacheToolUpdateCommand(ctx, input), newCacheToolCurrentCommand(ctx, input), newCacheToolUsageCommand(ctx, input), newCacheToolRetentionCommand(ctx, input), newCacheToolRecoveryCommand(ctx, input))
+	cache.AddCommand(newCacheToolEnrollmentCommand(ctx, input))
 	return cache
 }
 
