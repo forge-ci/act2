@@ -42,7 +42,10 @@ func openToolEnrollmentHistory(ctx context.Context, root string) (*bbolt.DB, boo
 }
 
 func openToolEnrollmentHistoryMode(ctx context.Context, root string, create bool) (*bbolt.DB, bool, error) {
-	path := toolEnrollmentHistoryPath(root)
+	return openEnrollmentHistoryFile(ctx, toolEnrollmentHistoryPath(root), create)
+}
+
+func openEnrollmentHistoryFile(ctx context.Context, path string, create bool) (*bbolt.DB, bool, error) {
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, false, err
@@ -73,7 +76,7 @@ func openToolEnrollmentHistoryMode(ctx context.Context, root string, create bool
 			return nil, false, err
 		}
 		// Include the initial file's namespace entry in the durable intent.
-		if err := syncToolDirectory(filepath.Dir(root)); err != nil {
+		if err := syncToolDirectory(filepath.Dir(path)); err != nil {
 			return nil, false, errors.Join(err, db.Close())
 		}
 		return db, fresh, nil

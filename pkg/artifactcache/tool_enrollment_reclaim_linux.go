@@ -92,6 +92,10 @@ func enrollmentReclaimMount(fd int) (uint64, error) {
 }
 
 func reclaimToolEnrollmentDirectory(ctx context.Context, directory *os.File, root int, mount uint64, depth int, budget *int) (bool, error) {
+	return reclaimEnrollmentDirectory(ctx, directory, root, mount, depth, budget, toolEnrollmentSourceIdentityName)
+}
+
+func reclaimEnrollmentDirectory(ctx context.Context, directory *os.File, root int, mount uint64, depth int, budget *int, preserve string) (bool, error) {
 	for *budget > 0 {
 		if err := ctx.Err(); err != nil {
 			return false, err
@@ -105,7 +109,7 @@ func reclaimToolEnrollmentDirectory(ctx context.Context, directory *os.File, roo
 		}
 		*budget--
 		name := names[0]
-		if depth == 0 && name == toolEnrollmentSourceIdentityName {
+		if depth == 0 && name == preserve {
 			continue
 		}
 		done, err := reclaimToolEnrollmentEntry(ctx, int(directory.Fd()), root, name, mount, depth, budget)

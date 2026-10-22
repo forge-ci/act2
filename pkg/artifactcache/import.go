@@ -2,6 +2,7 @@ package artifactcache
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 )
 
 type ImportReport struct {
+	cause                      error
 	RetainedSourceArchiveBytes *int64          `json:"retained_source_archive_bytes"`
 	AvailableDestinationBytes  *uint64         `json:"available_destination_bytes"`
 	RequiredAdditionalBytes    *uint64         `json:"required_additional_bytes"`
@@ -47,6 +49,10 @@ type ImportReceipt struct {
 // writers outside their metadata protocol. The destination is atomically
 // published only after validation, under an exclusive cohort root lease.
 func ImportCompleted(ctx context.Context, source, root, name string, maxBytes int64) ImportReport {
+	return importCompletedWithStages(ctx, source, root, name, maxBytes, ordinaryImportStages())
+}
+
+func importCompletedWithStages(ctx context.Context, source, root, name string, maxBytes int64, stages importStagePolicy) ImportReport {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	report := ImportReport{SchemaVersion: 1, Source: source, Destination: filepath.Join(root, name)}
@@ -76,7 +82,7 @@ func ImportCompleted(ctx context.Context, source, root, name string, maxBytes in
 		report.fail(fmt.Errorf("no completed archive fits import budget; increase max-bytes to preserve a warm cache"))
 		return report
 	}
-	if err := publishImport(ctx, sourceHandler, sourceDB, inventory.Fingerprint, root, maxBytes, caches, &report); err != nil {
+	if err := publishImportUsingStages(ctx, sourceHandler, sourceDB, inventory.Fingerprint, root, maxBytes, caches, &report, availableImportSpace, stages); err != nil {
 		report.fail(err)
 	}
 	return report
@@ -87,13 +93,17 @@ func publishImport(ctx context.Context, source *Handler, sourceDB *bolthold.Stor
 }
 
 func publishImportWithSpace(ctx context.Context, source *Handler, sourceDB *bolthold.Store, fingerprint, root string, maxBytes int64, caches []*Cache, report *ImportReport, probe importSpaceProbe) error {
-	stage, lease, err := createImportStage(root, report.Destination)
+	return publishImportUsingStages(ctx, source, sourceDB, fingerprint, root, maxBytes, caches, report, probe, ordinaryImportStages())
+}
+
+func publishImportUsingStages(ctx context.Context, source *Handler, sourceDB *bolthold.Store, fingerprint, root string, maxBytes int64, caches []*Cache, report *ImportReport, probe importSpaceProbe, stages importStagePolicy) error {
+	stage, lease, err := stages.create(root, report.Destination)
 	if err != nil {
 		return err
 	}
 	defer lease.Close()
 	report.PendingStage = stage
-	defer cleanupImportStage(stage, report)
+	defer stages.cleanup(stage, report)
 	if err := initializeCohortNamespace(stage); err != nil {
 		return err
 	}
@@ -126,26 +136,19 @@ func publishImportWithSpace(ctx context.Context, source *Handler, sourceDB *bolt
 	return err
 }
 
+type importStagePolicy struct {
+	create  func(string, string) (string, transferLease, error)
+	cleanup func(string, *ImportReport)
+}
+
+func ordinaryImportStages() importStagePolicy {
+	return importStagePolicy{create: createImportStage, cleanup: cleanupImportStage}
+}
+
 func createImportStage(root, destination string) (string, transferLease, error) {
-	// #nosec G703 -- explicit caller-selected cohort root, checked below.
-	if err := os.MkdirAll(root, 0o755); err != nil {
-		return "", nil, err
-	}
-	info, err := os.Lstat(root) // #nosec G703 -- explicit caller-selected cohort root.
-	if err != nil || !info.IsDir() {
-		return "", nil, fmt.Errorf("cohort root is not a directory")
-	}
-	gate := &Handler{dir: root}
-	if err := gate.prepareTransferLock(); err != nil {
-		return "", nil, err
-	}
-	lease, err := gate.transferLock(false)
+	lease, err := openImportStageGate(root, destination)
 	if err != nil {
-		return "", nil, fmt.Errorf("cohort busy: %w", err)
-	}
-	if _, err := os.Lstat(destination); !os.IsNotExist(err) {
-		_ = lease.Close()
-		return "", nil, fmt.Errorf("destination already exists or is unreadable")
+		return "", nil, err
 	}
 	stage, err := os.MkdirTemp(root, ".import-")
 	if err != nil {
@@ -153,6 +156,30 @@ func createImportStage(root, destination string) (string, transferLease, error) 
 		return "", nil, err
 	}
 	return stage, lease, nil
+}
+
+func openImportStageGate(root, destination string) (transferLease, error) {
+	// #nosec G703 -- explicit caller-selected cohort root, checked below.
+	if err := os.MkdirAll(root, 0755); err != nil {
+		return nil, err
+	}
+	info, err := os.Lstat(root) // #nosec G703 -- explicit caller-selected cohort root.
+	if err != nil || !info.IsDir() {
+		return nil, fmt.Errorf("cohort root is not a directory")
+	}
+	gate := &Handler{dir: root}
+	if err = gate.prepareTransferLock(); err != nil {
+		return nil, err
+	}
+	lease, err := gate.transferLock(false)
+	if err != nil {
+		return nil, fmt.Errorf("cohort busy: %w", err)
+	}
+	if _, err = os.Lstat(destination); !os.IsNotExist(err) {
+		_ = lease.Close()
+		return nil, fmt.Errorf("destination already exists or is unreadable")
+	}
+	return lease, nil
 }
 
 func cleanupImportStage(stage string, report *ImportReport) {
@@ -175,6 +202,7 @@ func cleanupImportStage(stage string, report *ImportReport) {
 }
 
 func (r *ImportReport) fail(err error) {
+	r.cause = errors.Join(r.cause, err)
 	r.Partial = true
 	detail := []rune(err.Error())
 	if r.Error != "" {
