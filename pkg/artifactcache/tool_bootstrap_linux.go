@@ -28,7 +28,7 @@ func bootstrapToolGenerationWithSelectionSync(ctx context.Context, source, root 
 	} else if existing != nil {
 		return *existing
 	}
-	plans, err := inspectToolUpdates(ctx, root, source, nil, maxBytes, true)
+	plans, err := inspectToolUpdates(ctx, root, source, nil, maxBytes, toolScanLegacyBootstrap)
 	if err != nil {
 		report.fail(err)
 		return report

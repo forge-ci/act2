@@ -11,6 +11,13 @@ import (
 	"strings"
 )
 
+type toolScanMode uint8
+
+const (
+	toolScanRecovery toolScanMode = iota
+	toolScanLegacyBootstrap
+)
+
 type toolRecoveryObjectPlan struct {
 	path     string
 	report   ToolSnapshotReport
@@ -22,14 +29,14 @@ type toolRecoveryObjectPlan struct {
 // happens once per completed install; its exact manifest is reused to publish.
 // Both enumeration and retained manifests have finite aggregate bounds.
 func inspectToolRecoveryUpdates(ctx context.Context, root, source string, original []ToolGenerationInstall, maxBytes int64) ([]toolRecoveryObjectPlan, error) {
-	return inspectToolUpdates(ctx, root, source, original, maxBytes, false)
+	return inspectToolUpdates(ctx, root, source, original, maxBytes, toolScanRecovery)
 }
 
-func inspectToolUpdates(ctx context.Context, root, source string, original []ToolGenerationInstall, maxBytes int64, rejectNamespaceLinks bool) ([]toolRecoveryObjectPlan, error) {
+func inspectToolUpdates(ctx context.Context, root, source string, original []ToolGenerationInstall, maxBytes int64, mode toolScanMode) ([]toolRecoveryObjectPlan, error) {
 	if err := validateToolSnapshotPaths(source, root, maxBytes); err != nil {
 		return nil, err
 	}
-	paths, err := completedToolPaths(ctx, source, rejectNamespaceLinks)
+	paths, err := completedToolPaths(ctx, source, mode)
 	if err != nil {
 		return nil, err
 	}
@@ -67,10 +74,10 @@ func inspectToolUpdates(ctx context.Context, root, source string, original []Too
 }
 
 func completedToolRecoveryPaths(ctx context.Context, source string) ([]string, error) {
-	return completedToolPaths(ctx, source, false)
+	return completedToolPaths(ctx, source, toolScanRecovery)
 }
 
-func completedToolPaths(ctx context.Context, source string, rejectNamespaceLinks bool) ([]string, error) {
+func completedToolPaths(ctx context.Context, source string, mode toolScanMode) ([]string, error) {
 	var installs []string
 	walked := 0
 	err := filepath.WalkDir(source, func(path string, entry fs.DirEntry, walkErr error) error {
@@ -84,8 +91,16 @@ func completedToolPaths(ctx context.Context, source string, rejectNamespaceLinks
 		if walked > 100000 {
 			return fmt.Errorf("recovery namespace walk exceeds entry bound")
 		}
+		// The legacy seeder copies source/*: private root entries and save
+		// stages never belong to the published tool-cache namespace.
+		if isPrivateLegacyToolRoot(mode, source, path, entry) {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 		if !entry.IsDir() {
-			if rejectNamespaceLinks && entry.Type()&os.ModeSymlink != 0 {
+			if mode == toolScanLegacyBootstrap && entry.Type()&os.ModeSymlink != 0 {
 				return fmt.Errorf("tool bootstrap namespace contains a symlink outside a completed install")
 			}
 			return nil
@@ -128,4 +143,8 @@ func completedToolPaths(ctx context.Context, source string, rejectNamespaceLinks
 		return nil
 	})
 	return installs, err
+}
+
+func isPrivateLegacyToolRoot(mode toolScanMode, source, path string, entry fs.DirEntry) bool {
+	return mode == toolScanLegacyBootstrap && path != source && filepath.Dir(path) == source && strings.HasPrefix(entry.Name(), ".")
 }
