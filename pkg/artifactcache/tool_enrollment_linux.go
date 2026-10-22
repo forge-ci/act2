@@ -83,6 +83,10 @@ func enrollToolGenerationOperation(ctx context.Context, source, root string, max
 		report.fail(err)
 		return report
 	}
+	if err := reclaimToolEnrollmentSnapshot(ctx, *history); err != nil {
+		report.fail(err)
+		return report
+	}
 	report.Generation, report.Enrolled, report.SourceFenced = selection.ID, true, true
 	return report
 }
