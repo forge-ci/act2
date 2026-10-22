@@ -67,7 +67,9 @@ func scanToolTree(ctx context.Context, root, completion string, maxBytes int64) 
 		return nil
 	})
 	sort.Slice(manifest.Entries, func(i, j int) bool { return manifest.Entries[i].Path < manifest.Entries[j].Path })
-	if err == nil && total == 0 {
+	// A generation can explicitly contain no installs. Completed install
+	// objects still require payload and cannot masquerade as a cold lower.
+	if err == nil && total == 0 && completion != "generation-v1" {
 		err = fmt.Errorf("completed tool object has no payload bytes")
 	}
 	return manifest, total, err
