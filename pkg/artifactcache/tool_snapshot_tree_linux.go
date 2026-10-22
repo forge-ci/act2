@@ -136,6 +136,12 @@ func boundedToolSymlink(root, path, relative string) (string, error) {
 	// Resolve the actual link, without first cleaning its target. A directory
 	// symlink followed by .. can escape despite a lexically confined target.
 	physical, err := filepath.EvalSymlinks(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		err = closedMissingToolLeaf(root, relative, link)
+		if err == nil {
+			return link, nil
+		}
+	}
 	if err != nil {
 		return "", fmt.Errorf("tool symlink is unresolved: %w", err)
 	}
