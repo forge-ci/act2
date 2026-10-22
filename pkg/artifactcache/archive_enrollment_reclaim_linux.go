@@ -67,8 +67,6 @@ func reclaimCohortArchiveSources(ctx context.Context, root string) ([]string, er
 	return pending, nil
 }
 
-var errArchivePublicationPending = errors.New("archive publication remains pending; preserve source and destination for reconciliation")
-
 func reclaimCohortArchiveSource(ctx context.Context, root, namespace string) error {
 	if err := validateImportName(namespace); err != nil {
 		return err

@@ -2,6 +2,7 @@ package artifactcache
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -15,6 +16,9 @@ import (
 )
 
 const maxCohortNamespaces = 64
+
+// A namespace whose first archive publication has not reconciled.
+var errArchivePublicationPending = errors.New("archive publication remains pending; preserve source and destination for reconciliation")
 
 type CohortReport struct {
 	SchemaVersion           int          `json:"schema_version"`
