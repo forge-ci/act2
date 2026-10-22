@@ -117,6 +117,10 @@ func publishVerifiedToolRecoveryPin(ctx context.Context, catalog transferLease, 
 			report.fail(fmt.Errorf("recovery pin differs from immutable owner intent"))
 			return report
 		}
+		if report.PendingStage, err = prepareToolRecoverySourceLease(ctx, catalog, root, pin, syncParent); err != nil {
+			report.fail(err)
+			return report
+		}
 		report.PendingStage, err = fenceToolRecoveryStore(ctx, catalog, root, syncParent)
 		if err != nil {
 			report.fail(err)
@@ -130,6 +134,10 @@ func publishVerifiedToolRecoveryPin(ctx context.Context, catalog transferLease, 
 	}
 	if len(records) >= toolRecoveryPinLimit {
 		report.fail(fmt.Errorf("recovery pin inventory at capacity"))
+		return report
+	}
+	if report.PendingStage, err = prepareToolRecoverySourceLease(ctx, catalog, root, pin, syncParent); err != nil {
+		report.fail(err)
 		return report
 	}
 	report.PendingStage, err = fenceToolRecoveryStore(ctx, catalog, root, syncParent)

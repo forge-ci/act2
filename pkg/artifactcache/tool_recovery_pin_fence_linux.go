@@ -21,7 +21,7 @@ func fenceToolRecoveryStore(ctx context.Context, catalog transferLease, root str
 	if err != nil {
 		return "", err
 	}
-	if string(data) == toolStoreRecoveryMagic {
+	if string(data) == toolStoreRecoveryMagic || string(data) == toolStoreSourceRecoveryMagic {
 		return "", syncParent(root)
 	}
 	if string(data) != toolStoreMagic {
