@@ -23,6 +23,10 @@ func (r importReader) Read(p []byte) (int, error) {
 }
 
 func copyVerifiedArchive(ctx context.Context, source, destination string, size int64) (string, error) {
+	return copyVerifiedFile(ctx, source, destination, size, (*os.File).Sync)
+}
+
+func copyVerifiedFile(ctx context.Context, source, destination string, size int64, finalize func(*os.File) error) (string, error) {
 	input, err := os.Open(source)
 	if err != nil {
 		return "", err
@@ -37,7 +41,7 @@ func copyVerifiedArchive(ctx context.Context, source, destination string, size i
 	}
 	hash := sha256.New()
 	copied, copyErr := io.Copy(io.MultiWriter(output, hash), importReader{ctx: ctx, reader: io.LimitReader(input, size+1)})
-	syncErr := output.Sync()
+	syncErr := finalize(output)
 	closeErr := output.Close()
 	if copyErr != nil {
 		return "", copyErr

@@ -165,19 +165,15 @@ func fillToolSnapshot(ctx context.Context, source, stage string, manifest toolMa
 	if err := os.Mkdir(payload, 0755); err != nil {
 		return err
 	}
-	for _, entry := range manifest.Entries {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if entry.Path == "." {
-			continue
-		}
-		target := filepath.Join(payload, entry.Path)
-		if err := copyToolEntry(ctx, filepath.Join(source, entry.Path), target, entry); err != nil {
-			return err
-		}
+	if err := copyToolSnapshotEntries(ctx, source, payload, manifest.Entries, copyToolEntry); err != nil {
+		return err
 	}
 	for index := len(manifest.Entries) - 1; index >= 0; index-- {
+		// Regular files were finalized and synced through their original write
+		// descriptor. Directories wait until all children have been created.
+		if manifest.Entries[index].Kind == "file" {
+			continue
+		}
 		if err := applyToolMetadata(filepath.Join(payload, manifest.Entries[index].Path), manifest.Entries[index]); err != nil {
 			return err
 		}
@@ -221,7 +217,14 @@ func copyToolEntry(ctx context.Context, source, destination string, entry toolEn
 	case "symlink":
 		return os.Symlink(entry.Link, destination)
 	case "file":
-		digest, err := copyVerifiedArchive(ctx, source, destination, entry.Bytes)
+		digest, err := copyVerifiedFile(ctx, source, destination, entry.Bytes, func(output *os.File) error {
+			if err := setToolMetadata(destination, entry); err != nil {
+				return err
+			}
+			// Keep the original write descriptor through the final sync so an
+			// asynchronous writeback error cannot be lost by closing/reopening.
+			return output.Sync()
+		})
 		if err != nil {
 			return err
 		}
@@ -235,6 +238,16 @@ func copyToolEntry(ctx context.Context, source, destination string, entry toolEn
 }
 
 func applyToolMetadata(path string, entry toolEntry) error {
+	if err := setToolMetadata(path, entry); err != nil {
+		return err
+	}
+	if entry.Kind == "symlink" {
+		return nil
+	}
+	return syncToolDirectory(path)
+}
+
+func setToolMetadata(path string, entry toolEntry) error {
 	info, err := os.Lstat(path)
 	if err != nil {
 		return err
@@ -258,5 +271,5 @@ func applyToolMetadata(path string, entry toolEntry) error {
 	if err := os.Chtimes(path, stamp, stamp); err != nil {
 		return err
 	}
-	return syncToolDirectory(path)
+	return nil
 }

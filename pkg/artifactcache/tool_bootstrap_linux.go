@@ -16,7 +16,10 @@ func bootstrapToolGeneration(ctx context.Context, source, root string, maxBytes 
 
 func bootstrapToolGenerationWithSelectionSync(ctx context.Context, source, root string, maxBytes int64, syncSelection func(string) error) (report ToolGenerationUpdateReport) {
 	report.SchemaVersion = 1
-	ctx, cancel := context.WithTimeout(ctx, 180*time.Second)
+	// Explicit enrollment materializes every completed legacy install, unlike
+	// an incremental publication. Keep the whole migration finite while allowing
+	// the measured multi-GiB cache to complete all copy, verification and syncs.
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 	if err := validateToolBootstrapStore(root, maxBytes); err != nil {
 		report.fail(err)
