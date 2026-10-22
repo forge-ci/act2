@@ -83,6 +83,8 @@ type Health struct {
 	ToolCache string `json:"tool_cache,omitempty"`
 	// CacheBudget is the last shared-cache budget pass.
 	CacheBudget *BudgetPass `json:"cache_budget,omitempty"`
+	// BuilderBudget is the last engine build-cache budget pass.
+	BuilderBudget *BuilderPass `json:"builder_budget,omitempty"`
 }
 
 // ErrorBody is every non-2xx response.

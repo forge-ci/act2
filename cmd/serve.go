@@ -64,6 +64,9 @@ func newServeCommand(ctx context.Context, version string) *cobra.Command {
 	flags.DurationVar(&cfg.Budget.MaxAge, "cache-budget-max-age", 30*24*time.Hour, "Archives older than this expire")
 	flags.DurationVar(&cfg.Budget.Interval, "cache-budget-interval", time.Hour, "Time between budget passes")
 	flags.IntVar(&cfg.Budget.MaxNamespaces, "cache-budget-max-namespaces", 64, "Namespaces visited per pass; more is reported partial")
+	flags.Int64Var(&cfg.BuilderBudget.MaxBytes, "builder-budget-max-bytes", 8<<30, "Engine build-cache bytes kept (0: no build-cache budget)")
+	flags.DurationVar(&cfg.BuilderBudget.UnusedAge, "builder-budget-unused-age", 7*24*time.Hour, "Build-cache records unused this long expire")
+	flags.DurationVar(&cfg.BuilderBudget.Interval, "builder-budget-interval", time.Hour, "Time between build-cache budget passes")
 	client := func() *serve.Client { return serve.NewClient(cfg.Socket) }
 	root.AddCommand(
 		newServeStatusCommand(ctx, client),
