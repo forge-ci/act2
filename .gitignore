@@ -32,3 +32,4 @@ unit-tests.xml
 
 # megalinter
 report/
+.clud/
