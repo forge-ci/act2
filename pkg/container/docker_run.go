@@ -177,6 +177,9 @@ func (cr *containerReference) Remove() common.Executor {
 	).IfNot(common.Dryrun)
 }
 
+// ID is the daemon's immutable container identity, including behind a proxy.
+func (cr *containerReference) ID() string { return cr.id }
+
 func (cr *containerReference) GetHealth(ctx context.Context) Health {
 	inspectResult, err := cr.cli.ContainerInspect(ctx, cr.id, client.ContainerInspectOptions{})
 	logger := common.Logger(ctx)
