@@ -152,3 +152,31 @@ func TestToolBootstrapAcceptsDeliberatelyPreparedEmptyDestination(t *testing.T) 
 	require.False(t, report.Partial, report.Error)
 	require.True(t, report.Selected)
 }
+
+func TestToolBootstrapExcludesPrivateLegacyRootEntries(t *testing.T) {
+	for _, scenario := range []string{"stage", "oversized-stage", "alias"} {
+		t.Run(scenario, func(t *testing.T) {
+			source, root := toolBootstrapFixture(t)
+			if scenario != "alias" {
+				stage := filepath.Join(source, ".saving-abandoned", "install")
+				require.NoError(t, os.MkdirAll(stage, 0755))
+				payload := []byte("unpublished")
+				if scenario == "oversized-stage" {
+					payload = make([]byte, 200)
+				}
+				require.NoError(t, os.WriteFile(filepath.Join(stage, "tool"), payload, 0600))
+				require.NoError(t, os.WriteFile(filepath.Join(stage, ".complete"), nil, 0600))
+			} else {
+				require.NoError(t, os.Symlink(filepath.Join(source, "Go"), filepath.Join(source, ".private-alias")))
+			}
+			report := BootstrapToolGeneration(context.Background(), source, root, 100)
+			require.False(t, report.Partial, report.Error)
+			state, err := CurrentToolGenerationState(context.Background(), root, 100)
+			require.NoError(t, err)
+			require.Len(t, state.Installs, 2, "private root entries are not part of the published legacy tool cache")
+			for _, install := range state.Installs {
+				require.NotContains(t, install.Path, ".saving-")
+			}
+		})
+	}
+}
