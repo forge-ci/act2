@@ -9,6 +9,9 @@ type ToolGenerationInstall struct {
 }
 
 // ToolGenerationSpec is a complete desired generation, not an in-place update.
+// An explicitly empty install array requests a closed empty lower for initial
+// cold enrollment or intentional removal of all installs. A nil/missing array
+// is invalid; missing current state never implies this explicit choice.
 type ToolGenerationSpec struct {
 	SchemaVersion int                     `json:"schema_version"`
 	Installs      []ToolGenerationInstall `json:"installs"`

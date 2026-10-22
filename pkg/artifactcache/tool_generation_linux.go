@@ -128,8 +128,8 @@ func publishToolGenerationLocked(ctx context.Context, catalog transferLease, roo
 }
 
 func validateToolGenerationSpec(root string, spec ToolGenerationSpec, maxBytes int64) ([]ToolGenerationInstall, error) {
-	if maxBytes <= 0 || spec.SchemaVersion != 1 || len(spec.Installs) == 0 || len(spec.Installs) > 256 || len(root) > 4096 || !filepath.IsAbs(root) || filepath.Clean(root) != root {
-		return nil, fmt.Errorf("tool generation requires a canonical store, schema 1, 1..256 installs and a positive byte bound")
+	if maxBytes <= 0 || spec.SchemaVersion != 1 || spec.Installs == nil || len(spec.Installs) > 256 || len(root) > 4096 || !filepath.IsAbs(root) || filepath.Clean(root) != root {
+		return nil, fmt.Errorf("tool generation requires a canonical store, schema 1, an explicit 0..256 install array and a positive byte bound")
 	}
 	resolved, err := filepath.EvalSymlinks(root)
 	if err != nil || resolved != root {
@@ -140,7 +140,8 @@ func validateToolGenerationSpec(root string, spec ToolGenerationSpec, maxBytes i
 	if err != nil || !info.IsDir() {
 		return nil, fmt.Errorf("tool generation store is not a directory")
 	}
-	installs := append([]ToolGenerationInstall(nil), spec.Installs...)
+	installs := make([]ToolGenerationInstall, len(spec.Installs))
+	copy(installs, spec.Installs)
 	sort.Slice(installs, func(i, j int) bool { return installs[i].Path < installs[j].Path })
 	for index, install := range installs {
 		if err := validateToolInstall(install); err != nil {
