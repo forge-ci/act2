@@ -15,6 +15,7 @@ import (
 func newCacheToolRecoveryCommand(ctx context.Context, input *Input) *cobra.Command {
 	command := &cobra.Command{Use: "tool-recovery", Short: "Reserve or release a lower using durable recovery intent"}
 	command.AddCommand(newCacheToolRecoverySourceEnrollment(ctx, input), newCacheToolRecoverySourceDisposal(ctx, input), newCacheToolRecoveryMutation(ctx, input, false), newCacheToolRecoveryMutation(ctx, input, true), newCacheToolRecoveryPublish(ctx, input), newCacheToolRecoveryOverlay(ctx, input))
+	command.AddCommand(newCacheToolRecoveryFinalize(ctx, input))
 	return command
 }
 

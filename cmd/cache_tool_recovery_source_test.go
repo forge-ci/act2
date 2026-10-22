@@ -35,25 +35,7 @@ func TestToolRecoverySourceDisposalCommand(t *testing.T) {
 		t.Skip("Linux native store")
 	}
 	ctx := context.Background()
-	base := t.TempDir()
-	store := filepath.Join(base, "store")
-	require.True(t, artifactcache.EnrollToolRecoverySourceStore(ctx, store).Enrolled)
-	source := filepath.Join(base, "source")
-	require.NoError(t, os.Mkdir(source, 0755))
-	require.NoError(t, os.WriteFile(source+".complete", nil, 0600))
-	require.NoError(t, os.WriteFile(filepath.Join(source, "payload"), []byte("warm"), 0600))
-	object := artifactcache.PublishToolSnapshot(ctx, source, store, 100)
-	require.False(t, object.Partial, object.Error)
-	selected := artifactcache.InitializeToolGeneration(ctx, store, artifactcache.ToolGenerationSpec{SchemaVersion: 1, Installs: []artifactcache.ToolGenerationInstall{{Path: "Go/1/x64", ObjectID: object.ID}}}, 100)
-	require.False(t, selected.Partial, selected.Error)
-	now := time.Now().UTC()
-	pin := artifactcache.ToolRecoveryPin{SchemaVersion: 1, Owner: strings.Repeat("a", 64), Generation: selected.Generation.ID, CreatedAt: now, ExpiresAt: now.Add(2 * time.Second)}
-	reserved := artifactcache.PublishToolRecoveryPin(ctx, store, pin, 100)
-	require.True(t, reserved.Published, reserved.Error)
-	record := filepath.Join(base, "intent.json")
-	data, err := json.Marshal(pin)
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(record, data, 0600))
+	store, record, pin := sourceRecoveryCommandFixture(ctx, t)
 	run := func(apply bool) (artifactcache.ToolRecoverySourceDisposalReport, error) {
 		root := createRootCommand(ctx, &Input{}, "test")
 		var out bytes.Buffer
@@ -70,7 +52,7 @@ func TestToolRecoverySourceDisposalCommand(t *testing.T) {
 		}
 		return report, err
 	}
-	_, err = run(false)
+	_, err := run(false)
 	require.ErrorContains(t, err, "--apply")
 	refused, err := run(true)
 	require.Error(t, err)
@@ -85,4 +67,50 @@ func TestToolRecoverySourceDisposalCommand(t *testing.T) {
 	retried, err := run(true)
 	require.NoError(t, err)
 	require.True(t, retried.Disposed)
+}
+
+func sourceRecoveryCommandFixture(ctx context.Context, t *testing.T) (string, string, artifactcache.ToolRecoveryPin) {
+	t.Helper()
+	base := t.TempDir()
+	store := filepath.Join(base, "store")
+	require.True(t, artifactcache.EnrollToolRecoverySourceStore(ctx, store).Enrolled)
+	source := filepath.Join(base, "source")
+	require.NoError(t, os.Mkdir(source, 0755))
+	require.NoError(t, os.WriteFile(source+".complete", nil, 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(source, "payload"), []byte("warm"), 0600))
+	object := artifactcache.PublishToolSnapshot(ctx, source, store, 100)
+	require.False(t, object.Partial, object.Error)
+	selected := artifactcache.InitializeToolGeneration(ctx, store, artifactcache.ToolGenerationSpec{SchemaVersion: 1, Installs: []artifactcache.ToolGenerationInstall{{Path: "Go/1/x64", ObjectID: object.ID}}}, 100)
+	require.False(t, selected.Partial, selected.Error)
+	now := time.Now().UTC()
+	pin := artifactcache.ToolRecoveryPin{SchemaVersion: 1, Owner: strings.Repeat("a", 64), Generation: selected.Generation.ID, CreatedAt: now, ExpiresAt: now.Add(10 * time.Second)}
+	reserved := artifactcache.PublishToolRecoveryPin(ctx, store, pin, 100)
+	require.True(t, reserved.Published, reserved.Error)
+	record := filepath.Join(base, "intent.json")
+	data, err := json.Marshal(pin)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(record, data, 0600))
+	return store, record, pin
+}
+
+func TestToolRecoveryFinalizeSourceCommandExpired(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("Linux native store")
+	}
+	ctx := context.Background()
+	store, record, pin := sourceRecoveryCommandFixture(ctx, t)
+	time.Sleep(time.Until(pin.ExpiresAt) + 20*time.Millisecond)
+	root := createRootCommand(ctx, &Input{}, "test")
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetArgs([]string{"cache", "tool-recovery", "finalize-source", "--cache-server-path", store,
+		"--record", record, "--max-bytes", "100", "--source-quiescent", "--apply"})
+	require.NoError(t, root.Execute(), "an expired orphan must finalize without an owning Bosn registry or source mount")
+	var report artifactcache.ToolRecoveryFinalizationReport
+	require.NoError(t, json.Unmarshal(out.Bytes(), &report))
+	require.True(t, report.ReferenceAbsent, report.Error)
+	require.Nil(t, report.Publication)
+	require.True(t, report.Disposed, report.Error)
+	require.False(t, report.Partial, report.Error)
+	require.Equal(t, pin.Owner, report.Pin.Owner)
 }
