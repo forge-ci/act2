@@ -16,18 +16,12 @@ import (
 // every inode type. Referenced file bytes count all regular-file paths and
 // deliberately do not deduplicate hardlinks.
 type ToolStoreUsage struct {
-	SchemaVersion       int       `json:"schema_version"`
-	Root                string    `json:"root"`
-	ObservedAt          time.Time `json:"observed_at"`
-	FilesystemDevice    *uint64   `json:"filesystem_device"`
-	PathEntries         int       `json:"path_entries"`
-	UniqueInodes        int       `json:"unique_inodes"`
-	ApparentBytes       *int64    `json:"apparent_bytes"`
-	AllocatedBytes      *int64    `json:"allocated_bytes"`
-	UniqueFileBytes     *int64    `json:"unique_file_bytes"`
-	ReferencedFileBytes *int64    `json:"referenced_file_bytes"`
-	Partial             bool      `json:"partial"`
-	Error               string    `json:"error,omitempty"`
+	SchemaVersion int       `json:"schema_version"`
+	Root          string    `json:"root"`
+	ObservedAt    time.Time `json:"observed_at"`
+	InodeUsage
+	Partial bool   `json:"partial"`
+	Error   string `json:"error,omitempty"`
 }
 
 func (r *ToolStoreUsage) fail(err error) {
