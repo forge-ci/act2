@@ -598,3 +598,41 @@ zero allocated blocks even when it has no file-data extents.
 This is an act2 filesystem/helper contract. Bosn source ownership/lifetime,
 Docker helper supervision, production routing, dependency release/pins and
 full workflow/large-store acceptance remain separate unfinished integration.
+
+
+### Source lifetime and disposal fence (Bosn #508)
+
+`cache tool-recovery enroll-source-store --cache-server-path STORE --apply`
+creates a new empty epoch-3 store before tool bootstrap. It refuses an existing
+epoch-1/2 store rather than upgrading it while older helpers might still own
+views. Existing epoch-3 stores reconcile directory sync without changing their
+catalog inode or generation. Root ancestry follows bootstrap's canonical path
+policy. This is store initialization, not proof of machine-wide writer exclusion
+or migration of an existing legacy cache.
+
+Reservations persist the complete frozen pin in a staged, synced per-owner Bolt
+inode. Recovery view admission acquires a shared source lease under the original
+catalog before opening the view. Both original lower and source leases remain
+held until view cleanup succeeds, even after reference withdrawal, expiry or
+failed unmount. Missing, aliased, hard-linked, oversized or corrupt source
+coordination refuses; admission never recreates it. Reservations and source
+coordination each have a 10,000-owner bound; source-deletion acknowledgement and
+safe coordination reclamation remain future work, so exhaustion refuses.
+
+`cache tool-recovery dispose-source --record INTENT --cache-server-path STORE --apply`
+returns a schema-1 report with the full pin and `disposed`, `partial`, and optional
+`error`. Only `disposed: true` with `partial: false` acknowledges the durable
+fence. It requires epoch 3, the exact stored identity, an exclusive source lock,
+and either actual expiry or a durable exact recovery completion with the pin
+released. A live source reader refuses within 100 ms, even after pin expiry.
+The decision is durable and irreversible: subsequent view admission and
+reservation refuse it; a lost sync acknowledgement requires reconciliation,
+never reopening. Receipt-only recovery retries remain source-free.
+
+`tool-recovery-source-fence-v1` advertises these operations. This command does
+not delete source data, stop engine writers, prove Docker ownership, or solve
+Docker named-volume recreation. The coordinator must independently prove exact
+writer absence and source ownership and use absence-refusing source attachment
+before physical deletion. Older stores acquire no deletion authority. Bosn's
+production enrollment, global source discovery, disposal integration and full
+cross-daemon workflow acceptance remain separate work.

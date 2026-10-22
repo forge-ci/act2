@@ -126,8 +126,15 @@ func reconcileBootstrapSelection(ctx context.Context, root string, selection Too
 }
 
 func validateToolBootstrapStore(root string, maxBytes int64) error {
-	if maxBytes <= 0 || len(root) > 4096 || !filepath.IsAbs(root) || filepath.Clean(root) != root || filepath.Dir(root) == root {
-		return fmt.Errorf("tool bootstrap requires a canonical store and positive byte bound")
+	if maxBytes <= 0 {
+		return fmt.Errorf("tool bootstrap requires a positive byte bound")
+	}
+	return validateToolNativeStoreRoot(root)
+}
+
+func validateToolNativeStoreRoot(root string) error {
+	if len(root) > 4096 || !filepath.IsAbs(root) || filepath.Clean(root) != root || filepath.Dir(root) == root {
+		return fmt.Errorf("tool store requires a canonical non-root path")
 	}
 	parent := filepath.Dir(root)
 	resolved, err := filepath.EvalSymlinks(parent)

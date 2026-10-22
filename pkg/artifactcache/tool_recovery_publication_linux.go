@@ -61,6 +61,7 @@ var recoveryViewOwner struct {
 
 type toolRecoveryPendingView struct {
 	reader ToolGenerationLease
+	source transferLease
 	close  func() error
 }
 
@@ -73,6 +74,9 @@ func cleanupPendingToolRecoveryView() error {
 		return fmt.Errorf("recovery view cleanup: %w", err)
 	}
 	if err := pending.reader.Close(); err != nil {
+		return err
+	}
+	if err := pending.source.Close(); err != nil {
 		return err
 	}
 	recoveryViewOwner.pending = nil
@@ -100,6 +104,17 @@ func publishToolRecoveryView(ctx context.Context, root string, pin ToolRecoveryP
 	if receipt != nil {
 		return *receipt
 	}
+	source, err := acquireToolRecoverySourceLease(ctx, root, pin)
+	if err != nil {
+		report.fail(err)
+		return report
+	}
+	sourceTransferred := false
+	defer func() {
+		if !sourceTransferred {
+			_ = source.Close()
+		}
+	}()
 	reader, err := AcquireToolGenerationLease(ctx, root, pin.Generation, maxBytes)
 	if err != nil {
 		report.fail(err)
@@ -124,7 +139,8 @@ func publishToolRecoveryView(ctx context.Context, root string, pin ToolRecoveryP
 	// A factory that failed after mounting must still return its cleanup handle.
 	if view.Close != nil {
 		readerTransferred = true
-		recoveryViewOwner.pending = &toolRecoveryPendingView{reader: reader, close: view.Close}
+		sourceTransferred = true
+		recoveryViewOwner.pending = &toolRecoveryPendingView{reader: reader, source: source, close: view.Close}
 		defer func() {
 			if err := cleanupPendingToolRecoveryView(); err != nil {
 				report.fail(err)

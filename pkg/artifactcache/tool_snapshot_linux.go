@@ -175,6 +175,10 @@ func prepareToolSnapshotStore(root string) (transferLease, error) {
 }
 
 func prepareToolSnapshotStoreWithLease(root string, openCatalog func(string) (transferLease, error)) (transferLease, error) {
+	return prepareToolSnapshotStoreWithInitialMarker(root, openCatalog, toolStoreMagic)
+}
+
+func prepareToolSnapshotStoreWithInitialMarker(root string, openCatalog func(string) (transferLease, error), initialMagic string) (transferLease, error) {
 	if err := os.Mkdir(root, 0755); err != nil && !os.IsExist(err) {
 		return nil, err
 	}
@@ -208,7 +212,7 @@ func prepareToolSnapshotStoreWithLease(root string, openCatalog func(string) (tr
 	if err != nil {
 		return nil, err
 	}
-	if err = ensureToolStoreMarker(marker); err == nil {
+	if err = ensureToolStoreMarkerWithInitial(marker, initialMagic); err == nil {
 		err = syncToolDirectory(filepath.Dir(root))
 	}
 	if err != nil {
@@ -248,13 +252,13 @@ func verifyToolStoreInitialContents(root string) error {
 	return nil
 }
 
-func ensureToolStoreMarker(path string) error {
+func ensureToolStoreMarkerWithInitial(path, initialMagic string) error {
 	if info, err := os.Lstat(path); err == nil {
 		if !info.Mode().IsRegular() || info.Size() != int64(len(toolStoreMagic)) {
 			return fmt.Errorf("unsupported tool store marker")
 		}
 		data, err := os.ReadFile(path)
-		if err != nil || (string(data) != toolStoreMagic && string(data) != toolStoreRecoveryMagic) {
+		if err != nil || (string(data) != toolStoreMagic && string(data) != toolStoreRecoveryMagic && string(data) != toolStoreSourceRecoveryMagic) {
 			return fmt.Errorf("invalid tool store marker")
 		}
 		return nil
@@ -263,7 +267,7 @@ func ensureToolStoreMarker(path string) error {
 	if err != nil {
 		return err
 	}
-	_, writeErr := file.WriteString(toolStoreMagic)
+	_, writeErr := file.WriteString(initialMagic)
 	syncErr, closeErr := file.Sync(), file.Close()
 	if writeErr != nil {
 		return writeErr
