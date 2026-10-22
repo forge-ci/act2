@@ -38,7 +38,7 @@ func (f *fakeDocker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := apiPath(r.URL.Path)
 	owners := map[string]string{"mine": `{"Config":{"Labels":{"test.run":"` + runA + `"}}}`,
 		"job-0a1b2c3d4e5f": `{"Config":{"Labels":{"test.run":"` + runA + `"}}}`,
-		"theirs": `{"Config":{"Labels":{"test.run":"` + runB + `"}}}`, "bosn": `{"Config":{"Labels":{}}}`}
+		"theirs":           `{"Config":{"Labels":{"test.run":"` + runB + `"}}}`, "bosn": `{"Config":{"Labels":{}}}`}
 	switch {
 	case path == "/volumes/create":
 		f.mu.Lock()
@@ -200,20 +200,22 @@ func TestReapRemovesOnlyRunSockets(t *testing.T) {
 }
 
 func TestTheRunProxyResolvesScopedContainerReferences(t *testing.T) {
- c, _, docker := startProxyForTest(t)
- code, _ := call(t, c, "POST", "/containers/create?name=action",
-  `{"HostConfig":{"NetworkMode":"container:job","PidMode":"container:job","IpcMode":"container:job","VolumesFrom":["job:ro"],"Links":["/job:alias"]}}`)
- require.Equal(t, http.StatusCreated, code)
- require.Len(t, docker.creates, 1)
- _, body, _ := strings.Cut(docker.creates[0], " ")
- var created struct { HostConfig struct {
-  NetworkMode, PidMode, IpcMode string
-  VolumesFrom, Links []string
- } }
- require.NoError(t, json.Unmarshal([]byte(body), &created))
- assert.Equal(t, "container:job-0a1b2c3d4e5f", created.HostConfig.NetworkMode)
- assert.Equal(t, "container:job-0a1b2c3d4e5f", created.HostConfig.PidMode)
- assert.Equal(t, "container:job-0a1b2c3d4e5f", created.HostConfig.IpcMode)
- assert.Equal(t, []string{"job-0a1b2c3d4e5f:ro"}, created.HostConfig.VolumesFrom)
- assert.Equal(t, []string{"/job-0a1b2c3d4e5f:alias"}, created.HostConfig.Links)
+	c, _, docker := startProxyForTest(t)
+	code, _ := call(t, c, "POST", "/containers/create?name=action",
+		`{"HostConfig":{"NetworkMode":"container:job","PidMode":"container:job","IpcMode":"container:job","VolumesFrom":["job:ro"],"Links":["/job:alias"]}}`)
+	require.Equal(t, http.StatusCreated, code)
+	require.Len(t, docker.creates, 1)
+	_, body, _ := strings.Cut(docker.creates[0], " ")
+	var created struct {
+		HostConfig struct {
+			NetworkMode, PidMode, IpcMode string
+			VolumesFrom, Links            []string
+		}
+	}
+	require.NoError(t, json.Unmarshal([]byte(body), &created))
+	assert.Equal(t, "container:job-0a1b2c3d4e5f", created.HostConfig.NetworkMode)
+	assert.Equal(t, "container:job-0a1b2c3d4e5f", created.HostConfig.PidMode)
+	assert.Equal(t, "container:job-0a1b2c3d4e5f", created.HostConfig.IpcMode)
+	assert.Equal(t, []string{"job-0a1b2c3d4e5f:ro"}, created.HostConfig.VolumesFrom)
+	assert.Equal(t, []string{"/job-0a1b2c3d4e5f:alias"}, created.HostConfig.Links)
 }
