@@ -209,7 +209,7 @@ func runStepExecutor(step step, stage stepStage, executor common.Executor) commo
 		ferrors = append(ferrors, processRunnerEnvFileCommand(ctx, stateFileCommand, rc, rc.saveState))
 		ferrors = append(ferrors, processRunnerEnvFileCommand(ctx, outputFileCommand, rc, rc.setOutput))
 		ferrors = append(ferrors, processRunnerSummaryCommand(ctx, summaryFileCommand, rc))
-		ferrors = append(ferrors, rc.UpdateExtraPath(ctx, path.Join(actPath, pathFileCommand)))
+		ferrors = append(ferrors, rc.updateExtraPath(ctx, path.Join(actPath, pathFileCommand), stepUsesDocker(step)))
 		return errors.Join(ferrors...)
 	}
 }

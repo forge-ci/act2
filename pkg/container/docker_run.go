@@ -177,6 +177,9 @@ func (cr *containerReference) Remove() common.Executor {
 	).IfNot(common.Dryrun)
 }
 
+// ID is the daemon's immutable container identity, including behind a proxy.
+func (cr *containerReference) ID() string { return cr.id }
+
 func (cr *containerReference) GetHealth(ctx context.Context) Health {
 	inspectResult, err := cr.cli.ContainerInspect(ctx, cr.id, client.ContainerInspectOptions{})
 	logger := common.Logger(ctx)
@@ -603,9 +606,17 @@ func (cr *containerReference) exec(cmd []string, env map[string]string, user, wo
 		}
 		logger.Debugf("Working directory '%s'", wd)
 
+		// Hosted runners use 0022 rather than Docker exec's daemon-dependent mask.
+		// Bash preserves hyphenated action inputs; privileged mode bypasses BASH_ENV.
+		// exec preserves literal argv, signal handling and the command's exit status.
+		execCommand := cmd
+		if cr.input.RunnerUmask && len(cmd) > 0 {
+			execCommand = append([]string{"/bin/bash", "--noprofile", "--norc", "-p", "-c", `umask 0022; exec "$@"`, "act2-exec"}, cmd...)
+		}
+
 		idResp, err := cr.cli.ExecCreate(ctx, cr.id, client.ExecCreateOptions{
 			User:         user,
-			Cmd:          cmd,
+			Cmd:          execCommand,
 			WorkingDir:   wd,
 			Env:          envList,
 			TTY:          isTerminal,

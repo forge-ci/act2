@@ -63,7 +63,7 @@ func start(t *testing.T, maxRuns int) (*Client, *fakeIsolator) {
 
 func startWith(t *testing.T, maxRuns int, configure func(*Config)) (*Client, *fakeIsolator) {
 	t.Helper()
-	dir := t.TempDir()
+	dir := shortTempDir(t)
 	iso := &fakeIsolator{}
 	cfg := Config{
 		Socket: filepath.Join(dir, "s.sock"), RunLabel: "test.run", ScopePrefix: "t-",

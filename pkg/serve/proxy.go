@@ -175,6 +175,10 @@ func (p *runProxy) applyCreate(kind string, r *http.Request) error {
 		return refuse(http.StatusInternalServerError, "act serve docker proxy refused the %s create: %v", kind, err)
 	}
 	if kind == "container" {
+		rewritten, err = p.rewriteContainerReferences(r.Context(), rewritten)
+		if err != nil {
+			return refuse(http.StatusInternalServerError, "act serve docker proxy refused container references: %v", err)
+		}
 		refs, err := createReferences(rewritten)
 		if err != nil {
 			return refuse(http.StatusInternalServerError, "act serve docker proxy refused the container create: %v", err)

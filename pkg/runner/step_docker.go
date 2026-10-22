@@ -107,7 +107,7 @@ func (sd *stepDocker) newStepContainer(ctx context.Context, image string, cmd []
 	envList = append(envList, fmt.Sprintf("%s=%s", "RUNNER_TEMP", "/tmp"))
 
 	binds, mounts := rc.GetBindsAndMounts()
-	networkMode := fmt.Sprintf("container:%s", rc.jobContainerName())
+	networkMode := rc.jobContainerNetworkMode()
 	workdir := rc.JobContainer.ToContainerPath(rc.Config.Workdir)
 	if _, ok := rc.JobContainer.(*container.HostEnvironment); ok {
 		networkMode = "default"

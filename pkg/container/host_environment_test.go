@@ -92,3 +92,20 @@ func TestGetContainerArchive(t *testing.T) {
 	_, err = reader.Next()
 	assert.ErrorIs(t, err, io.EOF)
 }
+
+func TestGetContainerArchivePreservesEmptyDirectories(t *testing.T) {
+	dir := t.TempDir()
+	assert.NoError(t, os.Mkdir(filepath.Join(dir, "empty"), 0751))
+	e := &HostEnvironment{Path: dir}
+	archive, err := e.GetContainerArchive(context.Background(), dir)
+	if !assert.NoError(t, err) {
+		return
+	}
+	defer archive.Close()
+	header, err := tar.NewReader(archive).Next()
+	if assert.NoError(t, err) {
+		assert.Equal(t, "empty", header.Name)
+		assert.Equal(t, byte(tar.TypeDir), header.Typeflag)
+		assert.Equal(t, int64(0751), header.Mode&0777)
+	}
+}

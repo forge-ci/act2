@@ -114,6 +114,17 @@ func (rc *RunContext) jobContainerName() string {
 	return createContainerName("act", rc.String())
 }
 
+// jobContainerNetworkMode uses the daemon identity so proxies may rename the
+// created container without breaking Docker action namespace joins.
+func (rc *RunContext) jobContainerNetworkMode() string {
+	if identified, ok := rc.JobContainer.(interface{ ID() string }); ok {
+		if id := identified.ID(); id != "" {
+			return "container:" + id
+		}
+	}
+	return "container:" + rc.jobContainerName()
+}
+
 // networkName return the name of the network which will be created by `act` automatically for job,
 // only create network if using a service container
 func (rc *RunContext) networkName() (string, bool) {
@@ -448,6 +459,7 @@ func (rc *RunContext) startJobContainer() common.Executor {
 			Options:        rc.options(ctx),
 			Init:           rc.emulatesHostedRunner(ctx),
 			HostedRunner:   rc.emulatesHostedRunner(ctx),
+			RunnerUmask:    rc.emulatesHostedRunner(ctx),
 			SourceDir:      ext.HostWorkdir,
 		})
 		if rc.JobContainer == nil {
@@ -556,6 +568,10 @@ func (rc *RunContext) ApplyExtraPath(ctx context.Context, env *map[string]string
 }
 
 func (rc *RunContext) UpdateExtraPath(ctx context.Context, githubEnvPath string) error {
+	return rc.updateExtraPath(ctx, githubEnvPath, false)
+}
+
+func (rc *RunContext) updateExtraPath(ctx context.Context, githubEnvPath string, fromDocker bool) error {
 	if common.Dryrun(ctx) {
 		return nil
 	}
@@ -583,6 +599,9 @@ func (rc *RunContext) UpdateExtraPath(ctx context.Context, githubEnvPath string)
 			}
 		}
 		if len(line) > 0 {
+			if fromDocker {
+				line = hostDockerPathToHost(rc, line)
+			}
 			rc.addPath(ctx, line)
 		}
 	}

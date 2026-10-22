@@ -408,7 +408,7 @@ func newStepContainer(ctx context.Context, step step, image string, cmd []string
 	envList = append(envList, fmt.Sprintf("%s=%s", "RUNNER_TEMP", "/tmp"))
 
 	binds, mounts := rc.GetBindsAndMounts()
-	networkMode := fmt.Sprintf("container:%s", rc.jobContainerName())
+	networkMode := rc.jobContainerNetworkMode()
 	var workdir string
 	if rc.IsHostEnv(ctx) {
 		networkMode = "default"
@@ -653,10 +653,10 @@ func runPostStep(step actionStep) common.Executor {
 
 		actionName, containerActionDir := getContainerActionPaths(stepModel, actionLocation, rc)
 
+		populateEnvsFromSavedState(step.getEnv(), step, rc)
 		x := action.Runs.Using
 		switch {
 		case x.IsNode():
-			populateEnvsFromSavedState(step.getEnv(), step, rc)
 			populateEnvsFromInput(ctx, step.getEnv(), step.getActionModel(), rc)
 
 			containerArgs := []string{rc.GetNodeToolFullPath(ctx), path.Join(containerActionDir, action.Runs.Post)}
