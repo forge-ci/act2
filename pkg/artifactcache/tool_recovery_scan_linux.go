@@ -22,10 +22,14 @@ type toolRecoveryObjectPlan struct {
 // happens once per completed install; its exact manifest is reused to publish.
 // Both enumeration and retained manifests have finite aggregate bounds.
 func inspectToolRecoveryUpdates(ctx context.Context, root, source string, original []ToolGenerationInstall, maxBytes int64) ([]toolRecoveryObjectPlan, error) {
+	return inspectToolUpdates(ctx, root, source, original, maxBytes, false)
+}
+
+func inspectToolUpdates(ctx context.Context, root, source string, original []ToolGenerationInstall, maxBytes int64, rejectNamespaceLinks bool) ([]toolRecoveryObjectPlan, error) {
 	if err := validateToolSnapshotPaths(source, root, maxBytes); err != nil {
 		return nil, err
 	}
-	paths, err := completedToolRecoveryPaths(ctx, source)
+	paths, err := completedToolPaths(ctx, source, rejectNamespaceLinks)
 	if err != nil {
 		return nil, err
 	}
@@ -63,6 +67,10 @@ func inspectToolRecoveryUpdates(ctx context.Context, root, source string, origin
 }
 
 func completedToolRecoveryPaths(ctx context.Context, source string) ([]string, error) {
+	return completedToolPaths(ctx, source, false)
+}
+
+func completedToolPaths(ctx context.Context, source string, rejectNamespaceLinks bool) ([]string, error) {
 	var installs []string
 	walked := 0
 	err := filepath.WalkDir(source, func(path string, entry fs.DirEntry, walkErr error) error {
@@ -77,6 +85,9 @@ func completedToolRecoveryPaths(ctx context.Context, source string) ([]string, e
 			return fmt.Errorf("recovery namespace walk exceeds entry bound")
 		}
 		if !entry.IsDir() {
+			if rejectNamespaceLinks && entry.Type()&os.ModeSymlink != 0 {
+				return fmt.Errorf("tool bootstrap namespace contains a symlink outside a completed install")
+			}
 			return nil
 		}
 		relative, err := filepath.Rel(source, path)
