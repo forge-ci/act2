@@ -12,6 +12,12 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
+type identifiedContainerMock struct {
+	*containerMock
+}
+
+func (*identifiedContainerMock) ID() string { return "daemon-returned-job-id" }
+
 func TestStepDockerMain(t *testing.T) {
 	cm := &containerMock{}
 
@@ -47,7 +53,7 @@ func TestStepDockerMain(t *testing.T) {
 					},
 				},
 			},
-			JobContainer: cm,
+			JobContainer: &identifiedContainerMock{cm},
 		},
 		Step: &model.Step{
 			ID:               "1",
@@ -100,6 +106,7 @@ func TestStepDockerMain(t *testing.T) {
 	assert.Nil(t, err)
 
 	assert.Equal(t, "node:14", input.Image)
+	assert.Equal(t, "container:daemon-returned-job-id", input.NetworkMode)
 
 	cm.AssertExpectations(t)
 }
