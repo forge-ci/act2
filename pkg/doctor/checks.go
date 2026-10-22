@@ -115,5 +115,9 @@ func serveState(h serve.Health) string {
 	if b := h.CacheBudget; b != nil {
 		budget = fmt.Sprintf("cache budget %s at %s over %d namespaces", b.Status, b.At.Format(time.RFC3339), b.Namespaces)
 	}
-	return strings.Join([]string{proxy, image, tools, budget}, "; ")
+	builder := "no build cache pass"
+	if b := h.BuilderBudget; b != nil {
+		builder = fmt.Sprintf("build cache budget %s at %s, %d bytes reclaimed", b.Status, b.At.Format(time.RFC3339), b.Reclaimed)
+	}
+	return strings.Join([]string{proxy, image, tools, budget, builder}, "; ")
 }

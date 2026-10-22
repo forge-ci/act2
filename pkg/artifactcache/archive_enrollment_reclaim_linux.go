@@ -39,23 +39,32 @@ func reclaimArchiveSourceWithBudget(ctx context.Context, h *archiveEnrollmentHis
 // Called under the exclusive cohort lease, before opening namespace databases.
 // Ready is the durable evidence that original writers were drained and the
 // publication was verified. Pending and unrelated source trees remain untouched.
-func reclaimCohortArchiveSources(ctx context.Context, root string) error {
+// It returns the namespaces whose first publication is still pending: the pass
+// leaves each untouched and maintains the rest, so one stalled publication
+// never stops eviction across the whole cohort.
+func reclaimCohortArchiveSources(ctx context.Context, root string) ([]string, error) {
 	entries, err := readDirectoryPage(root, maxCohortNamespaces+2)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(entries) > maxCohortNamespaces+1 {
-		return fmt.Errorf("cohort namespace limit exceeded")
+		return nil, fmt.Errorf("cohort namespace limit exceeded")
 	}
+	var pending []string
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
-		if err := reclaimCohortArchiveSource(ctx, root, entry.Name()); err != nil {
-			return err
+		err := reclaimCohortArchiveSource(ctx, root, entry.Name())
+		if errors.Is(err, errArchivePublicationPending) {
+			pending = append(pending, entry.Name())
+			continue
+		}
+		if err != nil {
+			return nil, err
 		}
 	}
-	return nil
+	return pending, nil
 }
 
 func reclaimCohortArchiveSource(ctx context.Context, root, namespace string) error {
@@ -84,7 +93,7 @@ func reclaimCohortArchiveSource(ctx context.Context, root, namespace string) err
 	// a persisted JSON document authority to choose reclamation paths.
 	h.Source, h.Root, h.Namespace = source, root, namespace
 	if !h.Ready {
-		return fmt.Errorf("archive publication remains pending; preserve source and destination for reconciliation")
+		return errArchivePublicationPending
 	}
 	request := ArchiveEnrollmentReport{Source: h.Source, Root: h.Root, Namespace: h.Namespace, MaxBytes: h.MaxBytes}
 	if err := validateArchiveEnrollment(&request, ArchiveEnrollmentComplete); err != nil {

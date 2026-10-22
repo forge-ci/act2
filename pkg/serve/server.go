@@ -43,6 +43,8 @@ type Config struct {
 	ToolCacheMount  string
 	// Budget, when its Root is set, is applied to the shared cache.
 	Budget Budget
+	// BuilderBudget bounds the engine's build cache through DockerUpstream.
+	BuilderBudget BuilderBudget
 }
 
 // Validate refuses a configuration whose ports or names cannot work.
@@ -67,7 +69,7 @@ func (c Config) Validate() error {
 	case c.Budget.Root != "" && (!filepath.IsAbs(c.Budget.Root) || c.Budget.Interval < time.Minute || c.Budget.MaxNamespaces < 1 || c.Budget.Lock == "" || strings.Contains(c.Budget.Lock, "/")):
 		return errors.New("--cache-budget-root must be absolute, with an interval of at least 1m, a namespace limit and a plain lock file name")
 	}
-	return nil
+	return c.BuilderBudget.validate()
 }
 
 // workDirs is every run's work tree layout.
@@ -93,6 +95,7 @@ type Server struct {
 	slots    []string
 	image    *ImageState
 	budget   *BudgetPass
+	builder  *BuilderPass
 	// imageMu serializes image loads; toolMu tool-cache preparation and saves.
 	imageMu sync.Mutex
 	toolMu  sync.Mutex
@@ -128,6 +131,7 @@ func (s *Server) Serve(ctx context.Context) error {
 		reapSockets(s.cfg.ProxyDir)
 	}
 	go s.runBudget(ctx)
+	go s.runBuilderBudget(ctx)
 	if err := os.MkdirAll(filepath.Dir(s.cfg.Socket), 0o700); err != nil {
 		return err
 	}
@@ -169,7 +173,7 @@ func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 		runs = append(runs, id)
 	}
 	health := Health{Protocol: ProtocolVersion, Version: s.cfg.Version, MaxRuns: s.cfg.MaxRuns, Runs: runs,
-		DockerProxy: s.cfg.ProxyDir != "", Image: s.image, CacheBudget: s.budget}
+		DockerProxy: s.cfg.ProxyDir != "", Image: s.image, CacheBudget: s.budget, BuilderBudget: s.builder}
 	s.mu.Unlock()
 	if done, err := s.preparedToolcache(); err == nil {
 		health.ToolCache = done.description()

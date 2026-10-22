@@ -113,3 +113,29 @@ func TestIdleCohortMaintenanceProtectsPendingArchivePublication(t *testing.T) {
 	_, err := os.Stat(filepath.Join(fence.Snapshot, "bolt.db"))
 	require.NoError(t, err)
 }
+
+func TestAPendingPublicationNoLongerBlocksTheRestOfTheCohort(t *testing.T) {
+	source, root := archiveEnrollmentFixture(t, 1)
+	fence := enrollArchiveTest(t, source, root, ArchiveEnrollmentFence)
+	imported := ImportCompleted(context.Background(), fence.Snapshot, root, "repo", 160)
+	require.False(t, imported.Partial, imported.Error)
+	other := filepath.Join(filepath.Dir(source), "other")
+	require.NoError(t, os.Mkdir(other, 0700))
+	storage, err := NewStorage(filepath.Join(other, "cache"))
+	require.NoError(t, err)
+	seedAuditEntries(t, &Handler{dir: other, storage: storage}, 2)
+	for _, phase := range []ArchiveEnrollmentPhase{ArchiveEnrollmentFence, ArchiveEnrollmentComplete} {
+		r := EnrollArchive(context.Background(), other, root, "other", 160, phase)
+		require.False(t, r.Partial, r.Error)
+	}
+	pass := MaintainCohort(context.Background(), root, 1, DefaultPolicy())
+	require.True(t, pass.Partial, "the pending namespace stays outside the budget")
+	require.Equal(t, []string{"repo"}, pass.PendingNamespaces)
+	require.Len(t, pass.Namespaces, 1, pass.Errors)
+	require.Equal(t, "other", filepath.Base(pass.Namespaces[0].Namespace))
+	audit := AuditStore(context.Background(), filepath.Join(root, "repo"), 0)
+	require.False(t, audit.Partial, audit.Errors)
+	require.EqualValues(t, 80, *audit.ArchiveBytes, "the pending publication is untouched")
+	_, err = os.Stat(filepath.Join(fence.Snapshot, "bolt.db"))
+	require.NoError(t, err)
+}
