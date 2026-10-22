@@ -181,7 +181,7 @@ func publishToolRecoveryLocked(ctx context.Context, catalog transferLease, root 
 			return report
 		}
 	}
-	updates, pending, err := publishToolRecoveryObjects(ctx, catalog, root, plans, maxBytes)
+	updates, pending, err := publishPlannedToolObjects(ctx, catalog, root, plans, maxBytes)
 	if err != nil {
 		report.PendingStage = pending
 		report.fail(err)
@@ -243,12 +243,12 @@ func admitToolRecoveryPublication(ctx context.Context, root string, pin ToolReco
 	return nil, requireLiveToolRecovery(ctx, root, pin)
 }
 
-func publishToolRecoveryObjects(ctx context.Context, catalog transferLease, root string, plans []toolRecoveryObjectPlan, maxBytes int64) ([]ToolGenerationInstall, string, error) {
+func publishPlannedToolObjects(ctx context.Context, catalog transferLease, root string, plans []toolRecoveryObjectPlan, maxBytes int64) ([]ToolGenerationInstall, string, error) {
 	updates := make([]ToolGenerationInstall, 0, len(plans))
 	for _, plan := range plans {
 		object := publishInspectedToolSnapshot(ctx, catalog, plan.report.Source, root, maxBytes, plan.report, plan.manifest, plan.data, syncToolDirectory)
 		if object.Partial || !object.Published {
-			return nil, object.PendingStage, fmt.Errorf("recovery object publication incomplete: %s", object.Error)
+			return nil, object.PendingStage, fmt.Errorf("tool object publication incomplete: %s", object.Error)
 		}
 		updates = append(updates, ToolGenerationInstall{Path: plan.path, ObjectID: object.ID})
 	}
