@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"time"
 
@@ -25,6 +26,9 @@ type CohortReport struct {
 	ProtectedBytes          *int64       `json:"protected_bytes"`
 	BudgetMet               *bool        `json:"budget_met"`
 	Namespaces              []StoreAudit `json:"namespaces"`
+	// PendingNamespaces hold an unfinished first publication. The pass leaves
+	// them untouched, outside the budget, and reports itself partial.
+	PendingNamespaces []string `json:"pending_namespaces,omitempty"`
 }
 
 type maintainedNamespace struct {
@@ -57,11 +61,16 @@ func MaintainCohort(ctx context.Context, root string, maxBytes int64, policy Pol
 		return report
 	}
 	defer lease.Close()
-	if err := reclaimCohortArchiveSources(ctx, root); err != nil {
+	pending, err := reclaimCohortArchiveSources(ctx, root)
+	if err != nil {
 		report.fail(fmt.Errorf("archive source reclamation: %w", err))
 		return report
 	}
-	stores, err := openCohort(ctx, root, policy)
+	report.PendingNamespaces = pending
+	for _, namespace := range pending {
+		report.fail(fmt.Errorf("namespace %s: %w", namespace, errArchivePublicationPending))
+	}
+	stores, err := openCohort(ctx, root, policy, pending)
 	if err != nil {
 		report.fail(err)
 		return report
@@ -103,7 +112,7 @@ func closeCohort(stores []*maintainedNamespace) {
 	}
 }
 
-func openCohort(ctx context.Context, root string, policy Policy) ([]*maintainedNamespace, error) {
+func openCohort(ctx context.Context, root string, policy Policy, skip []string) ([]*maintainedNamespace, error) {
 	// #nosec G703 -- explicit caller-selected local cohort root.
 	info, err := os.Lstat(root)
 	if err != nil || !info.IsDir() {
@@ -125,7 +134,7 @@ func openCohort(ctx context.Context, root string, policy Policy) ([]*maintainedN
 		}
 	}()
 	for _, entry := range entries {
-		if entry.Name() == "transfers.bolt" {
+		if entry.Name() == "transfers.bolt" || slices.Contains(skip, entry.Name()) {
 			continue
 		}
 		if !entry.IsDir() {
