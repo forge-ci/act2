@@ -636,3 +636,52 @@ writer absence and source ownership and use absence-refusing source attachment
 before physical deletion. Older stores acquire no deletion authority. Bosn's
 production enrollment, global source discovery, disposal integration and full
 cross-daemon workflow acceptance remain separate work.
+
+
+### Retained source finalization without an owning registry
+
+`cache tool-recovery finalize-source --record INTENT --cache-server-path STORE --max-bytes N --source-quiescent --apply`
+is advertised as `tool-recovery-source-finalize-v1`. It requires an already
+enrolled epoch-3 store and the existing source coordination inode matching the
+entire immutable pin. Missing, legacy or corrupt state refuses; this operation
+never enrolls a store or recreates missing source authority.
+
+For an unexpired source, also pass `--source-root DISK --toolcache-target ORIGINAL_TARGET
+--overlay-recipe-sha256 DIGEST`. The producer publishes completed installs under
+the original lower and source leases, successfully closes the view, releases the
+reference, then durably fences further source readers. A durable publication
+retry needs no source. After expiry, finalization never opens a new source view:
+it retries any retained failed cleanup, fences readers, then releases the
+expired reference. Active readers prevent the fence and preserve the reference.
+
+The schema-1 receipt reports `disposed`, `reference_absent`, and an optional
+`publication`. Every retry revalidates identity and repeats the producer fence.
+Neither the receipt nor `--source-quiescent` proves ownership or writer absence.
+The caller must continuously exclude engine writers, validate exact source and
+cache identity, prove helper teardown, and only then remove the exact source.
+This command does not physically delete a volume or implement Bosn's global
+source discovery, metadata retention or native activation.
+
+
+Candidate verification: the CLI regression first failed because `finalize-source`
+was absent, then passed. Focused checks cover successful view cleanup before
+reference release, idempotent source-free retries, cleanup failure followed by
+actual expiry, an active expired reader, and refusal of legacy/missing/altered
+or cancelled authority and zero budgets. The complete artifactcache suite and
+serve suite pass; changed-package Go lint reports zero issues. The focused CLI
+recovery/capability suite passes in 27.316s. A broader CLI run in the socket-free
+harness cannot run existing Docker workflow tests; it also exposed the existing
+two-second disposal fixture expiring before its live-refusal assertion. That
+fixture now uses ten seconds and still waits for actual expiry.
+
+An isolated Docker proof using the statically built candidate CLI passed fresh
+epoch-3 enrollment, a real stopped metacopy overlay, unknown-recipe refusal,
+live finalization, exact source-volume removal, and an identical source-free
+retry receipt. Independent payload SHA256, mode, settings, concurrent Node
+update, incomplete-install exclusion and unchanged-lower checks passed; the
+original generation became retireable only after reference finalization. Exact
+fixture container/volume absence was verified. The first dynamic candidate
+build failed at startup because the DIND image lacks its glibc loader; that
+attempt also cleaned up. Evidence is recorded in
+`/tmp/bosn-693/act2-source-finalize-docker-proof.{py,json,log}`. This proves the
+candidate CLI operation, not a published release or Bosn integration.
