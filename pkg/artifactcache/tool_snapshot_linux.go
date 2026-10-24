@@ -64,7 +64,7 @@ func publishToolSnapshotExpected(ctx context.Context, source, root string, maxBy
 		report.fail(fmt.Errorf("tool source changed since planning"))
 		return report
 	}
-	lease, err := prepareToolSnapshotStore(root)
+	lease, err := prepareToolSnapshotStore(ctx, root)
 	if err != nil {
 		report.fail(err)
 		return report
@@ -168,7 +168,16 @@ func toolSourceCompletion(source string) (string, error) {
 	return "", fmt.Errorf("tool source has no completed install marker")
 }
 
-func prepareToolSnapshotStore(root string) (transferLease, error) {
+// Writers wait for a busy catalog within their operation context, as ordinary
+// generation updates do (act2#91); a busy catalog is not a damaged store.
+func prepareToolSnapshotStore(ctx context.Context, root string) (transferLease, error) {
+	return prepareToolSnapshotStoreWithLease(root, func(path string) (transferLease, error) {
+		return openToolGenerationUpdateCatalog(ctx, path)
+	})
+}
+
+// A probe keeps the short timeout: admission has no operation context to wait in.
+func probeToolSnapshotStore(root string) (transferLease, error) {
 	return prepareToolSnapshotStoreWithLease(root, func(path string) (transferLease, error) {
 		return openTransferLease(path, false, 100*time.Millisecond)
 	})
@@ -229,7 +238,7 @@ func prepareExistingToolSnapshotStore(root string) (transferLease, error) {
 	if err != nil || !info.Mode().IsRegular() {
 		return nil, fmt.Errorf("tool generation admission requires an established store")
 	}
-	return prepareToolSnapshotStore(root)
+	return probeToolSnapshotStore(root)
 }
 
 func verifyToolStoreInitialContents(root string) error {

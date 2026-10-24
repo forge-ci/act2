@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 )
 
 func enrollToolRecoverySourceStore(ctx context.Context, root string) error {
@@ -18,7 +17,7 @@ func enrollToolRecoverySourceStore(ctx context.Context, root string) error {
 		return err
 	}
 	catalog, err := prepareToolSnapshotStoreWithInitialMarker(root, func(path string) (transferLease, error) {
-		return openTransferLease(path, false, 100*time.Millisecond)
+		return openToolGenerationUpdateCatalog(ctx, path)
 	}, toolStoreSourceRecoveryMagic)
 	if err != nil {
 		return err

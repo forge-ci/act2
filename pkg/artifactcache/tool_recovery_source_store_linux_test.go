@@ -19,7 +19,7 @@ func TestToolRecoverySourceEnrollmentRefusesOlderStores(t *testing.T) {
 				root, _, _ = toolRecoveryPublicationFixture(t)
 			} else {
 				root = filepath.Join(t.TempDir(), "store")
-				catalog, err := prepareToolSnapshotStore(root)
+				catalog, err := prepareToolSnapshotStore(context.Background(), root)
 				require.NoError(t, err)
 				require.NoError(t, catalog.Close())
 			}

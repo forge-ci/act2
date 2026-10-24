@@ -35,7 +35,7 @@ func publishToolGeneration(ctx context.Context, root string, spec ToolGeneration
 		report.fail(err)
 		return report
 	}
-	lease, err := prepareToolSnapshotStore(root)
+	lease, err := prepareToolSnapshotStore(ctx, root)
 	if err != nil {
 		report.fail(err)
 		return report

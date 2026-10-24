@@ -40,7 +40,7 @@ func bootstrapToolGenerationWithSelectionSync(ctx context.Context, source, root 
 		report.fail(fmt.Errorf("bootstrap source has no completed warm installs"))
 		return report
 	}
-	catalog, err := prepareToolSnapshotStore(root)
+	catalog, err := prepareToolSnapshotStore(ctx, root)
 	if err != nil {
 		report.fail(err)
 		return report
