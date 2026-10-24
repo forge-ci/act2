@@ -175,6 +175,9 @@ func (p *runProxy) applyCreate(kind string, r *http.Request) error {
 		return refuse(http.StatusInternalServerError, "act serve docker proxy refused the %s create: %v", kind, err)
 	}
 	if kind == "container" {
+		if rewritten, err = mapContainerReferences(r.Context(), rewritten, p.containerName); err != nil {
+			return refuse(http.StatusInternalServerError, "act serve docker proxy refused the container create: %v", err)
+		}
 		refs, err := createReferences(rewritten)
 		if err != nil {
 			return refuse(http.StatusInternalServerError, "act serve docker proxy refused the container create: %v", err)
@@ -205,6 +208,24 @@ func (p *runProxy) volumeName(name string) string {
 		return name + "-" + p.scope.Key
 	}
 	return name
+}
+
+// containerName is the name the proxy gave a container this run created as
+// name: Docker knows it as name-<key>. Any other reference (an ID, a container
+// the run did not create by that name) is left for the access check.
+func (p *runProxy) containerName(ctx context.Context, name string) (string, error) {
+	if strings.HasSuffix(name, "-"+p.scope.Key) {
+		return name, nil
+	}
+	suffixed := name + "-" + p.scope.Key
+	o, _, err := p.inspect(ctx, kindContainer, suffixed)
+	if err != nil {
+		return "", fmt.Errorf("container %s not resolved: %w", name, err)
+	}
+	if o.missing || o.run != p.scope.RunID {
+		return name, nil
+	}
+	return suffixed, nil
 }
 
 // mapVolume maps name and creates the volume with the run's label first (a
