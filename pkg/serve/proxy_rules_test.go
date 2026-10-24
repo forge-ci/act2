@@ -3,6 +3,7 @@ package serve
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/url"
 	"testing"
 
@@ -127,4 +128,26 @@ func TestCreatesAreLabelledPinnedAndMapped(t *testing.T) {
 		return "", assert.AnError
 	})
 	assert.Error(t, err, "a volume that cannot be prepared refuses the create")
+}
+
+// #449: a job's docker:// action joins the job container's network by the
+// name act gave it, but the proxy created that container as name-<key>.
+func TestContainerReferencesMapToTheRunKeyedName(t *testing.T) {
+	mapper := func(_ context.Context, name string) (string, error) {
+		if name == "job" || name == "svc" {
+			return name + "-k", nil
+		}
+		return name, nil
+	}
+	out, err := mapContainerReferences(context.Background(), []byte(`{"HostConfig":{"NetworkMode":"container:job","PidMode":"container:job",
+		"IpcMode":"host","VolumesFrom":["job:ro","other"],"Links":["/svc:alias"],"NanoCpus":12345678901234}}`), mapper)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"HostConfig":{"NetworkMode":"container:job-k","PidMode":"container:job-k","IpcMode":"host",
+		"VolumesFrom":["job-k:ro","other"],"Links":["/svc-k:alias"],"NanoCpus":12345678901234}}`, string(out))
+	out, err = mapContainerReferences(context.Background(), []byte(`{"HostConfig":{"NetworkMode":"bridge"}}`), mapper)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"HostConfig":{"NetworkMode":"bridge"}}`, string(out))
+	_, err = mapContainerReferences(context.Background(), []byte(`{"HostConfig":{"NetworkMode":"container:job"}}`),
+		func(context.Context, string) (string, error) { return "", errors.New("down") })
+	require.Error(t, err)
 }

@@ -416,3 +416,62 @@ func mapContainerVolumes(ctx context.Context, host map[string]any, mapVolume vol
 	}
 	return nil
 }
+
+// containerMapper maps a container a create references to the name the
+// proxy gave it.
+type containerMapper func(ctx context.Context, name string) (string, error)
+
+// mapContainerReferences maps every container a container create reaches
+// into (VolumesFrom, Links and container: modes): the proxy suffixed its name
+// with the run's key when it was created, so the caller's name is not Docker's.
+func mapContainerReferences(ctx context.Context, body []byte, mapContainer containerMapper) ([]byte, error) {
+	object, err := decodeObject(body)
+	if err != nil {
+		return nil, err
+	}
+	host, ok := object["HostConfig"].(map[string]any)
+	if !ok {
+		return body, nil
+	}
+	mapPrefix := func(text, sep string, trim bool) (string, error) {
+		parts := strings.SplitN(text, sep, 2)
+		name := parts[0]
+		if trim {
+			name = strings.TrimPrefix(name, "/")
+		}
+		mapped, err := mapContainer(ctx, name)
+		if err != nil {
+			return "", err
+		}
+		if trim && strings.HasPrefix(parts[0], "/") {
+			mapped = "/" + mapped
+		}
+		parts[0] = mapped
+		return strings.Join(parts, sep), nil
+	}
+	for key, trim := range map[string]bool{"VolumesFrom": false, "Links": true} {
+		list, _ := host[key].([]any)
+		for i, entry := range list {
+			text, ok := entry.(string)
+			if !ok || text == "" {
+				continue
+			}
+			if list[i], err = mapPrefix(text, ":", trim); err != nil {
+				return nil, err
+			}
+		}
+	}
+	for _, key := range []string{"NetworkMode", "PidMode", "IpcMode"} {
+		mode, _ := host[key].(string)
+		name, ok := strings.CutPrefix(mode, "container:")
+		if !ok || name == "" {
+			continue
+		}
+		mapped, err := mapContainer(ctx, name)
+		if err != nil {
+			return nil, err
+		}
+		host[key] = "container:" + mapped
+	}
+	return json.Marshal(object)
+}
