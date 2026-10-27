@@ -12,20 +12,24 @@ import (
 
 func newCacheToolEnrollmentCommand(ctx context.Context, input *Input) *cobra.Command {
 	var source string
-	var maxBytes int64
+	var maxBytes, timeoutSecs int64
 	var apply, quiescent, fenceOnly, requireFenced bool
 	command := &cobra.Command{Use: "tool-enroll", Short: "Enroll once, then select an enrolled tool generation without cold fallback", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if !apply || (!fenceOnly && !quiescent) {
 				return fmt.Errorf("tool enrollment requires --apply; publication also requires --source-quiescent after draining all legacy writers")
 			}
+			opCtx, err := toolOperationContext(ctx, cmd, timeoutSecs)
+			if err != nil {
+				return err
+			}
 			var report artifactcache.ToolEnrollmentReport
 			if fenceOnly {
-				report = artifactcache.FenceToolEnrollmentSource(ctx, source, input.cacheServerPath, maxBytes)
+				report = artifactcache.FenceToolEnrollmentSource(opCtx, source, input.cacheServerPath, maxBytes)
 			} else if requireFenced {
-				report = artifactcache.CompleteToolEnrollment(ctx, source, input.cacheServerPath, maxBytes)
+				report = artifactcache.CompleteToolEnrollment(opCtx, source, input.cacheServerPath, maxBytes)
 			} else {
-				report = artifactcache.EnrollToolGeneration(ctx, source, input.cacheServerPath, maxBytes)
+				report = artifactcache.EnrollToolGeneration(opCtx, source, input.cacheServerPath, maxBytes)
 			}
 			if err := json.NewEncoder(cmd.OutOrStdout()).Encode(report); err != nil {
 				return err
@@ -38,6 +42,7 @@ func newCacheToolEnrollmentCommand(ctx context.Context, input *Input) *cobra.Com
 	}
 	command.Flags().StringVar(&source, "from", "", "Quiescent legacy sibling root; atomically replaced by a refusal file while its tree is retained privately")
 	command.Flags().Int64Var(&maxBytes, "max-bytes", 0, "Positive logical payload-byte admission bound")
+	command.Flags().Int64Var(&timeoutSecs, "timeout-secs", 0, "Opt-in operation timeout in seconds (1..43200); parent deadlines still apply")
 	command.Flags().BoolVar(&apply, "apply", false, "Persist first-enrollment history and select a generation for reader admission")
 	command.Flags().BoolVar(&quiescent, "source-quiescent", false, "Confirm all legacy writers, including older peers, remain excluded throughout enrollment")
 	command.Flags().BoolVar(&fenceOnly, "fence-only", false, "Install only the durable source fence; drain old directory-FD writers before completing enrollment")

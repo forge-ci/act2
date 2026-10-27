@@ -54,7 +54,7 @@ func publishToolSnapshotWithSync(ctx context.Context, source, root string, maxBy
 }
 
 func publishToolSnapshotExpected(ctx context.Context, source, root string, maxBytes int64, expected string, syncRoot func(string) error) (report ToolSnapshotReport) {
-	ctx, cancel := context.WithTimeout(ctx, 180*time.Second)
+	ctx, cancel := toolOperationTimeout(ctx, 180*time.Second)
 	defer cancel()
 	report, manifest, data := inspectToolSnapshot(ctx, source, root, maxBytes)
 	if report.Partial {
@@ -352,7 +352,7 @@ func inspectToolSnapshot(ctx context.Context, source, root string, maxBytes int6
 }
 
 func planToolSnapshot(ctx context.Context, source, root string, maxBytes int64) ToolSnapshotReport {
-	ctx, cancel := context.WithTimeout(ctx, 180*time.Second)
+	ctx, cancel := toolOperationTimeout(ctx, 180*time.Second)
 	defer cancel()
 	report, _, _ := inspectToolSnapshot(ctx, source, root, maxBytes)
 	return report

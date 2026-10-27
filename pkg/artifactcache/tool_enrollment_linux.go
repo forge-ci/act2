@@ -27,7 +27,7 @@ func enrollToolGenerationPhase(ctx context.Context, source, root string, maxByte
 
 func enrollToolGenerationOperation(ctx context.Context, source, root string, maxBytes int64, phase toolEnrollmentPhase, ready func(*bbolt.DB, toolEnrollmentHistory) error) (report ToolEnrollmentReport) {
 	report.SchemaVersion, report.Source, report.Root = 1, source, root
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
+	ctx, cancel := toolOperationTimeout(ctx, 15*time.Minute)
 	defer cancel()
 	if err := validateToolEnrollmentPaths(source, root, maxBytes); err != nil {
 		report.fail(err)
