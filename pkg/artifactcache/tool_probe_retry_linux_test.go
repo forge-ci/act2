@@ -13,7 +13,7 @@ import (
 	"go.etcd.io/bbolt"
 )
 
-func awaitProbe(t *testing.T, ctx context.Context, signal <-chan struct{}) {
+func awaitProbe(ctx context.Context, t *testing.T, signal <-chan struct{}) {
 	t.Helper()
 	select {
 	case <-signal:
@@ -22,7 +22,7 @@ func awaitProbe(t *testing.T, ctx context.Context, signal <-chan struct{}) {
 	}
 }
 
-func awaitResult[T any](t *testing.T, ctx context.Context, result <-chan T) T {
+func awaitResult[T any](ctx context.Context, t *testing.T, result <-chan T) T {
 	t.Helper()
 	select {
 	case report := <-result:
@@ -58,10 +58,10 @@ func TestEnrollmentRetriesSelectionCatalogContention(t *testing.T) {
 			return report, retry
 		})
 	}()
-	awaitProbe(t, ctx, probe)
+	awaitProbe(ctx, t, probe)
 	require.NoError(t, catalog.Close())
 	resumeOnce.Do(func() { close(resume) })
-	report := awaitResult(t, ctx, done)
+	report := awaitResult(ctx, t, done)
 	require.False(t, report.Partial, report.Error)
 	require.Equal(t, first.Generation, report.Generation)
 }
@@ -98,15 +98,15 @@ func TestRecoveryPinRetriesCatalogReacquisition(t *testing.T) {
 			return report, retry
 		})
 	}()
-	awaitProbe(t, ctx, entered)
+	awaitProbe(ctx, t, entered)
 	catalog, err := prepareExistingToolSnapshotStore(root)
 	require.NoError(t, err)
 	defer catalog.Close()
 	verifyOnce.Do(func() { close(verifyResume) })
-	awaitProbe(t, ctx, probe)
+	awaitProbe(ctx, t, probe)
 	require.NoError(t, catalog.Close())
 	retryOnce.Do(func() { close(retryResume) })
-	report := awaitResult(t, ctx, done)
+	report := awaitResult(ctx, t, done)
 	require.False(t, report.Partial, report.Error)
 	require.True(t, report.Published)
 }
