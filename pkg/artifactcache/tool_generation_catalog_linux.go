@@ -14,10 +14,15 @@ import (
 )
 
 // Ordinary updates serialize complete read/merge/publish/select operations.
-// Their existing operation context bounds admission as well as publication;
-// a busy catalog is not evidence of a damaged store. Other reader and exclusive
-// probes retain their short timeout and missing coordination never gets rebuilt.
+// Recovery reservation also waits here before holding a generation reader.
+// The operation context bounds admission as well as publication; a busy catalog
+// is not evidence of a damaged store. Other reader and exclusive probes retain
+// their short timeout and missing coordination never gets rebuilt.
 func prepareToolGenerationUpdateCatalog(ctx context.Context, root string) (transferLease, error) {
+	return prepareToolGenerationUpdateCatalogWithOpen(ctx, root, openTransferLease)
+}
+
+func prepareToolGenerationUpdateCatalogWithOpen(ctx context.Context, root string, open func(string, bool, time.Duration) (transferLease, error)) (transferLease, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -26,11 +31,15 @@ func prepareToolGenerationUpdateCatalog(ctx context.Context, root string) (trans
 		return nil, fmt.Errorf("tool generation admission requires an established store")
 	}
 	return prepareToolSnapshotStoreWithLease(root, func(path string) (transferLease, error) {
-		return openToolGenerationUpdateCatalog(ctx, path)
+		return openToolGenerationUpdateCatalogWithOpen(ctx, path, open)
 	})
 }
 
 func openToolGenerationUpdateCatalog(ctx context.Context, path string) (transferLease, error) {
+	return openToolGenerationUpdateCatalogWithOpen(ctx, path, openTransferLease)
+}
+
+func openToolGenerationUpdateCatalogWithOpen(ctx context.Context, path string, open func(string, bool, time.Duration) (transferLease, error)) (transferLease, error) {
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -45,7 +54,7 @@ func openToolGenerationUpdateCatalog(ctx context.Context, path string) (transfer
 				timeout = remaining
 			}
 		}
-		lease, err := openTransferLease(path, false, timeout)
+		lease, err := open(path, false, timeout)
 		if contextErr := ctx.Err(); contextErr != nil {
 			if lease != nil {
 				_ = lease.Close()

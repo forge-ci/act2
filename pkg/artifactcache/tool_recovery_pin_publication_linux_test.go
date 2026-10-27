@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	boltErrors "go.etcd.io/bbolt/errors"
 )
 
 func TestToolRecoveryPinPublicationIsImmutableAndRetryable(t *testing.T) {
@@ -96,4 +97,59 @@ func TestToolRecoveryPinValidationReleasesCatalogUnderOriginalReader(t *testing.
 	case <-ctx.Done():
 		t.Fatal("publication did not finish")
 	}
+}
+
+func TestToolRecoveryPinReportsCatalogContention(t *testing.T) {
+	ctx := context.Background()
+	root, spec := toolGenerationFixture(t)
+	first := InitializeToolGeneration(ctx, root, spec, 100)
+	require.False(t, first.Partial, first.Error)
+	now := time.Now().UTC()
+	pin := ToolRecoveryPin{1, strings.Repeat("a", 64), first.Generation.ID, now, now.Add(time.Hour)}
+	catalog, err := prepareExistingToolSnapshotStore(root)
+	require.NoError(t, err)
+	defer catalog.Close()
+	deadlineCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer cancel()
+	report := PublishToolRecoveryPin(deadlineCtx, root, pin, 100)
+	require.True(t, report.Partial)
+	require.Contains(t, report.Error, "recovery reservation catalog")
+	require.Contains(t, report.Error, "deadline exceeded")
+}
+
+func TestToolRecoveryPinWaitsForInitialCatalogContention(t *testing.T) {
+	ctx := context.Background()
+	root, spec := toolGenerationFixture(t)
+	first := InitializeToolGeneration(ctx, root, spec, 100)
+	require.False(t, first.Partial, first.Error)
+	now := time.Now().UTC()
+	pin := ToolRecoveryPin{1, strings.Repeat("a", 64), first.Generation.ID, now, now.Add(time.Hour)}
+	catalog, err := prepareExistingToolSnapshotStore(root)
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	result := make(chan ToolRecoveryPinReport, 1)
+	entered, resume := make(chan struct{}), make(chan struct{})
+	go func() {
+		result <- publishToolRecoveryPinWithCatalog(ctx, root, pin, 100, syncToolDirectory, verifyToolGeneration, func(ctx context.Context, root string) (transferLease, error) {
+			return prepareToolGenerationUpdateCatalogWithOpen(ctx, root, func(path string, readOnly bool, timeout time.Duration) (transferLease, error) {
+				lease, err := openTransferLease(path, readOnly, timeout)
+				if errors.Is(err, boltErrors.ErrTimeout) {
+					close(entered)
+					<-resume
+				}
+				return lease, err
+			})
+		})
+	}()
+	select {
+	case <-entered:
+	case <-ctx.Done():
+		t.Fatal("reservation did not attempt the catalog lock")
+	}
+	require.NoError(t, catalog.Close())
+	close(resume)
+	report := <-result
+	require.False(t, report.Partial, report.Error)
+	require.True(t, report.Published)
 }
