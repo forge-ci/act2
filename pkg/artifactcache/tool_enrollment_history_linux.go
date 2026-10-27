@@ -46,6 +46,11 @@ func openToolEnrollmentHistoryMode(ctx context.Context, root string, create bool
 }
 
 func openEnrollmentHistoryFile(ctx context.Context, path string, create bool) (*bbolt.DB, bool, error) {
+	return openEnrollmentHistoryFileWithHook(ctx, path, create, nil)
+}
+
+// The hook allows tests to cancel exactly after opening, before the ownership check.
+func openEnrollmentHistoryFileWithHook(ctx context.Context, path string, create bool, opened func(bool)) (*bbolt.DB, bool, error) {
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, false, err
@@ -74,6 +79,12 @@ func openEnrollmentHistoryFile(ctx context.Context, path string, create bool) (*
 		}
 		if err != nil {
 			return nil, false, err
+		}
+		if opened != nil {
+			opened(fresh)
+		}
+		if err := ctx.Err(); err != nil && !fresh {
+			return nil, false, errors.Join(err, db.Close())
 		}
 		// Include the initial file's namespace entry in the durable intent.
 		if err := syncToolDirectory(filepath.Dir(path)); err != nil {

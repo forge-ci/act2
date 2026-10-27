@@ -4,6 +4,7 @@ package artifactcache
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"go.etcd.io/bbolt"
+	boltErrors "go.etcd.io/bbolt/errors"
 )
 
 func enrollToolGeneration(ctx context.Context, source, root string, maxBytes int64) (report ToolEnrollmentReport) {
@@ -25,41 +27,74 @@ func enrollToolGenerationPhase(ctx context.Context, source, root string, maxByte
 	return enrollToolGenerationOperation(ctx, source, root, maxBytes, phase, storeToolEnrollmentHistory)
 }
 
-func enrollToolGenerationOperation(ctx context.Context, source, root string, maxBytes int64, phase toolEnrollmentPhase, ready func(*bbolt.DB, toolEnrollmentHistory) error) (report ToolEnrollmentReport) {
+func enrollToolGenerationOperation(ctx context.Context, source, root string, maxBytes int64, phase toolEnrollmentPhase, ready func(*bbolt.DB, toolEnrollmentHistory) error) ToolEnrollmentReport {
+	ctx, cancel := toolOperationTimeout(ctx, 15*time.Minute)
+	defer cancel()
+	return retryToolEnrollmentReport(ctx, func(ctx context.Context) (ToolEnrollmentReport, bool) {
+		return enrollToolGenerationAttempt(ctx, source, root, maxBytes, phase, ready)
+	})
+}
+
+func retryToolEnrollmentReport(ctx context.Context, attempt func(context.Context) (ToolEnrollmentReport, bool)) ToolEnrollmentReport {
+	var lastProbe string
+	for {
+		report, retryProbe := attempt(ctx)
+		if err := ctx.Err(); err != nil && report.Partial {
+			if retryProbe {
+				lastProbe = report.Error
+			}
+			if lastProbe != "" {
+				report.fail(fmt.Errorf("operation ended: %w; %s; %s", err, lastProbe, report.Error))
+			}
+			return report
+		}
+		if !retryProbe {
+			return report
+		}
+		lastProbe = report.Error
+	}
+}
+
+// Each attempt closes the history database before retrying a catalog probe.
+func enrollToolGenerationAttempt(ctx context.Context, source, root string, maxBytes int64, phase toolEnrollmentPhase, ready func(*bbolt.DB, toolEnrollmentHistory) error) (ToolEnrollmentReport, bool) {
+	return enrollToolGenerationAttemptWithOpen(ctx, source, root, maxBytes, phase, ready, openToolEnrollmentHistoryMode)
+}
+
+func enrollToolGenerationAttemptWithOpen(ctx context.Context, source, root string, maxBytes int64, phase toolEnrollmentPhase, ready func(*bbolt.DB, toolEnrollmentHistory) error, open func(context.Context, string, bool) (*bbolt.DB, bool, error)) (report ToolEnrollmentReport, retryProbe bool) {
 	report.SchemaVersion, report.Source, report.Root = 1, source, root
 	ctx, cancel := toolOperationTimeout(ctx, 15*time.Minute)
 	defer cancel()
 	if err := validateToolEnrollmentPaths(source, root, maxBytes); err != nil {
 		report.fail(err)
-		return report
+		return report, retryProbe
 	}
-	db, fresh, err := openToolEnrollmentHistoryMode(ctx, root, phase != toolEnrollmentRequireFenced)
+	db, fresh, err := open(ctx, root, phase != toolEnrollmentRequireFenced)
 	if err != nil {
 		report.fail(err)
-		return report
+		return report, retryProbe
 	}
 	defer db.Close()
 	history, err := loadToolEnrollmentHistory(db, source, root)
 	if err != nil {
 		report.fail(err)
-		return report
+		return report, retryProbe
 	}
 	if history == nil {
 		if !fresh {
 			report.fail(fmt.Errorf("existing enrollment history has no identity; explicit reconciliation required"))
-			return report
+			return report, retryProbe
 		}
 		history, err = beginToolEnrollmentHistory(db, source, root)
 		if err != nil {
 			report.fail(err)
-			return report
+			return report, retryProbe
 		}
 	}
 	report.Mode = history.Mode
 	if phase == toolEnrollmentRequireFenced {
 		if err := requireToolEnrollmentSourceFence(*history); err != nil {
 			report.fail(err)
-			return report
+			return report, retryProbe
 		}
 	}
 	if !history.Ready {
@@ -67,28 +102,29 @@ func enrollToolGenerationOperation(ctx context.Context, source, root string, max
 		report.Mode = history.Mode
 		if err != nil {
 			report.fail(err)
-			return report
+			return report, retryProbe
 		}
 	}
 	if err := requireToolEnrollmentSourceFence(*history); err != nil {
 		report.fail(err)
-		return report
+		return report, retryProbe
 	}
 	if phase == toolEnrollmentFenceOnly {
 		report.SourceFenced = true
-		return report
+		return report, retryProbe
 	}
 	selection, err := toolEnrollmentSelection(ctx, root, maxBytes, *history)
 	if err != nil {
+		retryProbe = errors.Is(err, boltErrors.ErrTimeout)
 		report.fail(err)
-		return report
+		return report, retryProbe
 	}
 	if err := reclaimToolEnrollmentSnapshot(ctx, *history); err != nil {
 		report.fail(err)
-		return report
+		return report, retryProbe
 	}
 	report.Generation, report.Enrolled, report.SourceFenced = selection.ID, true, true
-	return report
+	return report, retryProbe
 }
 
 func advanceToolEnrollment(ctx context.Context, db *bbolt.DB, history *toolEnrollmentHistory, phase toolEnrollmentPhase, maxBytes int64, ready func(*bbolt.DB, toolEnrollmentHistory) error) error {
@@ -185,6 +221,9 @@ func toolEnrollmentSelection(ctx context.Context, root string, maxBytes int64, h
 		return ToolGenerationSelection{}, fmt.Errorf("enrollment selection catalog acquisition (100ms lock probe): %w", err)
 	}
 	defer catalog.Close()
+	if err := ctx.Err(); err != nil {
+		return ToolGenerationSelection{}, fmt.Errorf("enrollment selection catalog acquisition: %w", err)
+	}
 	if err := requireToolEnrollmentIdentity(root, history.StoreIdentity); err != nil {
 		return ToolGenerationSelection{}, err
 	}
