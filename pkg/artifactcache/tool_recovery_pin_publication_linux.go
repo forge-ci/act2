@@ -25,7 +25,11 @@ func publishToolRecoveryPinWithSync(ctx context.Context, root string, pin ToolRe
 	return publishToolRecoveryPinWithValidation(ctx, root, pin, maxBytes, syncParent, verifyToolGeneration)
 }
 
-func publishToolRecoveryPinWithValidation(ctx context.Context, root string, pin ToolRecoveryPin, maxBytes int64, syncParent func(string) error, verify toolRecoveryPinVerifier) (report ToolRecoveryPinReport) {
+func publishToolRecoveryPinWithValidation(ctx context.Context, root string, pin ToolRecoveryPin, maxBytes int64, syncParent func(string) error, verify toolRecoveryPinVerifier) ToolRecoveryPinReport {
+	return publishToolRecoveryPinWithCatalog(ctx, root, pin, maxBytes, syncParent, verify, prepareToolGenerationUpdateCatalog)
+}
+
+func publishToolRecoveryPinWithCatalog(ctx context.Context, root string, pin ToolRecoveryPin, maxBytes int64, syncParent func(string) error, verify toolRecoveryPinVerifier, acquire func(context.Context, string) (transferLease, error)) (report ToolRecoveryPinReport) {
 	report = ToolRecoveryPinReport{SchemaVersion: 1, Root: root, Pin: pin}
 	ctx, cancel := context.WithTimeout(ctx, 180*time.Second)
 	defer cancel()
@@ -43,9 +47,9 @@ func publishToolRecoveryPinWithValidation(ctx context.Context, root string, pin 
 		report.fail(err)
 		return report
 	}
-	catalog, err := prepareExistingToolSnapshotStore(root)
+	catalog, err := acquire(ctx, root)
 	if err != nil {
-		report.fail(err)
+		report.fail(fmt.Errorf("recovery reservation catalog acquisition: %w", err))
 		return report
 	}
 	catalogHeld := true
@@ -66,7 +70,7 @@ func publishToolRecoveryPinWithValidation(ctx context.Context, root string, pin 
 	}
 	reader, err := openTransferLease(filepath.Join(generation, toolGenerationReaderLock), true, 100*time.Millisecond)
 	if err != nil {
-		report.fail(err)
+		report.fail(fmt.Errorf("recovery reservation generation reader (100ms lock probe): %w", err))
 		return report
 	}
 	defer reader.Close()
@@ -87,7 +91,7 @@ func publishToolRecoveryPinWithValidation(ctx context.Context, root string, pin 
 	}
 	catalog, err = prepareExistingToolSnapshotStore(root)
 	if err != nil {
-		report.fail(err)
+		report.fail(fmt.Errorf("recovery reservation catalog reacquisition (100ms lock probe): %w", err))
 		return report
 	}
 	catalogHeld = true
