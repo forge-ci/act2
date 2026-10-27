@@ -12,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	boltErrors "go.etcd.io/bbolt/errors"
 )
 
 func publishToolRecoveryPin(ctx context.Context, root string, pin ToolRecoveryPin, maxBytes int64) ToolRecoveryPinReport {
@@ -29,28 +31,57 @@ func publishToolRecoveryPinWithValidation(ctx context.Context, root string, pin 
 	return publishToolRecoveryPinWithCatalog(ctx, root, pin, maxBytes, syncParent, verify, prepareToolGenerationUpdateCatalog)
 }
 
-func publishToolRecoveryPinWithCatalog(ctx context.Context, root string, pin ToolRecoveryPin, maxBytes int64, syncParent func(string) error, verify toolRecoveryPinVerifier, acquire func(context.Context, string) (transferLease, error)) (report ToolRecoveryPinReport) {
+func publishToolRecoveryPinWithCatalog(ctx context.Context, root string, pin ToolRecoveryPin, maxBytes int64, syncParent func(string) error, verify toolRecoveryPinVerifier, acquire func(context.Context, string) (transferLease, error)) ToolRecoveryPinReport {
+	ctx, cancel := toolOperationTimeout(ctx, 180*time.Second)
+	defer cancel()
+	return retryToolRecoveryPinReport(ctx, func(ctx context.Context) (ToolRecoveryPinReport, bool) {
+		return publishToolRecoveryPinAttempt(ctx, root, pin, maxBytes, syncParent, verify, acquire)
+	})
+}
+
+func retryToolRecoveryPinReport(ctx context.Context, attempt func(context.Context) (ToolRecoveryPinReport, bool)) ToolRecoveryPinReport {
+	var lastProbe string
+	for {
+		report, retryProbe := attempt(ctx)
+		if err := ctx.Err(); err != nil && report.Partial {
+			if retryProbe {
+				lastProbe = report.Error
+			}
+			if lastProbe != "" {
+				report.fail(fmt.Errorf("operation ended: %w; %s; %s", err, lastProbe, report.Error))
+			}
+			return report
+		}
+		if !retryProbe {
+			return report
+		}
+		lastProbe = report.Error
+	}
+}
+
+// Each attempt releases the generation reader before retrying the catalog.
+func publishToolRecoveryPinAttempt(ctx context.Context, root string, pin ToolRecoveryPin, maxBytes int64, syncParent func(string) error, verify toolRecoveryPinVerifier, acquire func(context.Context, string) (transferLease, error)) (report ToolRecoveryPinReport, retryProbe bool) {
 	report = ToolRecoveryPinReport{SchemaVersion: 1, Root: root, Pin: pin}
 	ctx, cancel := toolOperationTimeout(ctx, 180*time.Second)
 	defer cancel()
 	now := time.Now().UTC()
 	if err := pin.validate(); err != nil {
 		report.fail(err)
-		return report
+		return report, retryProbe
 	}
 	if pin.CreatedAt.After(now) || !pin.ExpiresAt.After(now) {
 		report.fail(fmt.Errorf("recovery pin is future-created or expired"))
-		return report
+		return report, retryProbe
 	}
 	guard := ToolGenerationSpec{SchemaVersion: 1, Installs: []ToolGenerationInstall{{Path: "recovery", ObjectID: pin.Generation}}}
 	if _, err := validateToolGenerationSpec(root, guard, maxBytes); err != nil {
 		report.fail(err)
-		return report
+		return report, retryProbe
 	}
 	catalog, err := acquire(ctx, root)
 	if err != nil {
 		report.fail(fmt.Errorf("recovery reservation catalog acquisition: %w", err))
-		return report
+		return report, retryProbe
 	}
 	catalogHeld := true
 	defer func() {
@@ -62,45 +93,51 @@ func publishToolRecoveryPinWithCatalog(ctx context.Context, root string, pin Too
 	manifest, data, err := readToolGenerationManifest(generation, pin.Generation)
 	if err != nil {
 		report.fail(err)
-		return report
+		return report, retryProbe
 	}
 	if _, err := validateToolGenerationSpec(root, ToolGenerationSpec{SchemaVersion: manifest.SchemaVersion, Installs: manifest.Installs}, maxBytes); err != nil {
 		report.fail(err)
-		return report
+		return report, retryProbe
 	}
 	reader, err := openTransferLease(filepath.Join(generation, toolGenerationReaderLock), true, 100*time.Millisecond)
 	if err != nil {
+		retryProbe = errors.Is(err, boltErrors.ErrTimeout)
 		report.fail(fmt.Errorf("recovery reservation generation reader (100ms lock probe): %w", err))
-		return report
+		return report, retryProbe
 	}
 	defer reader.Close()
 	// Validate payload outside the machine-wide catalog while the original
 	// reader excludes retirement, then re-read publication state under lock.
 	if err := catalog.Close(); err != nil {
 		report.fail(err)
-		return report
+		return report, retryProbe
 	}
 	catalogHeld = false
 	if err := verify(ctx, generation, data, manifest.Tree, maxBytes); err != nil {
 		report.fail(err)
-		return report
+		return report, retryProbe
 	}
 	if err := ctx.Err(); err != nil {
 		report.fail(err)
-		return report
+		return report, retryProbe
 	}
 	catalog, err = prepareExistingToolSnapshotStore(root)
 	if err != nil {
+		retryProbe = errors.Is(err, boltErrors.ErrTimeout)
 		report.fail(fmt.Errorf("recovery reservation catalog reacquisition (100ms lock probe): %w", err))
-		return report
+		return report, retryProbe
 	}
 	catalogHeld = true
+	if err := ctx.Err(); err != nil {
+		report.fail(fmt.Errorf("recovery reservation catalog reacquisition: %w", err))
+		return report, retryProbe
+	}
 	now = time.Now().UTC()
 	if !pin.ExpiresAt.After(now) {
 		report.fail(fmt.Errorf("recovery pin expired during validation"))
-		return report
+		return report, retryProbe
 	}
-	return publishVerifiedToolRecoveryPin(ctx, catalog, root, pin, now, syncParent, report)
+	return publishVerifiedToolRecoveryPin(ctx, catalog, root, pin, now, syncParent, report), false
 }
 
 func publishVerifiedToolRecoveryPin(ctx context.Context, catalog transferLease, root string, pin ToolRecoveryPin, now time.Time, syncParent func(string) error, report ToolRecoveryPinReport) ToolRecoveryPinReport {
