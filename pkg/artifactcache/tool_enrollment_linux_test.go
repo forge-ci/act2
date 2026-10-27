@@ -209,3 +209,20 @@ func TestToolEnrollmentContentionHonorsCancellation(t *testing.T) {
 	require.Contains(t, report.Error, "deadline exceeded")
 	require.Less(t, time.Since(start), time.Second)
 }
+
+func TestToolEnrollmentReportsSelectionCatalogContention(t *testing.T) {
+	source, root := toolBootstrapFixture(t)
+	first := EnrollToolGeneration(context.Background(), source, root, 100)
+	require.False(t, first.Partial, first.Error)
+	catalog, err := prepareExistingToolSnapshotStore(root)
+	require.NoError(t, err)
+	again := EnrollToolGeneration(context.Background(), source, root, 100)
+	require.True(t, again.Partial)
+	require.Contains(t, again.Error, "enrollment selection catalog")
+	require.Contains(t, again.Error, "timeout")
+	require.NoError(t, catalog.Close())
+	retried := EnrollToolGeneration(context.Background(), source, root, 100)
+	require.False(t, retried.Partial, retried.Error)
+	require.True(t, retried.Enrolled)
+	require.Equal(t, first.Generation, retried.Generation)
+}

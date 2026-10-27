@@ -182,7 +182,7 @@ func toolEnrollmentSelection(ctx context.Context, root string, maxBytes int64, h
 	}
 	catalog, err := prepareExistingToolSnapshotStore(root)
 	if err != nil {
-		return ToolGenerationSelection{}, err
+		return ToolGenerationSelection{}, fmt.Errorf("enrollment selection catalog acquisition (100ms lock probe): %w", err)
 	}
 	defer catalog.Close()
 	if err := requireToolEnrollmentIdentity(root, history.StoreIdentity); err != nil {
