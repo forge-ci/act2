@@ -153,3 +153,30 @@ func TestToolRecoveryPinWaitsForInitialCatalogContention(t *testing.T) {
 	require.False(t, report.Partial, report.Error)
 	require.True(t, report.Published)
 }
+
+func TestToolRecoveryPinHonorsOperationBudgetAndPreservesRetry(t *testing.T) {
+	root, spec := toolGenerationFixture(t)
+	first := InitializeToolGeneration(context.Background(), root, spec, 100)
+	require.False(t, first.Partial, first.Error)
+	now := time.Now().UTC()
+	pin := ToolRecoveryPin{1, strings.Repeat("e", 64), first.Generation.ID, now, now.Add(time.Hour)}
+	verify := func(ctx context.Context, generation string, data []byte, manifest toolManifest, maxBytes int64) error {
+		select {
+		case <-time.After(1500 * time.Millisecond):
+			return verifyToolGeneration(ctx, generation, data, manifest, maxBytes)
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	short, err := WithToolOperationBudget(context.Background(), time.Second)
+	require.NoError(t, err)
+	failed := publishToolRecoveryPinWithValidation(short, root, pin, 100, syncToolDirectory, verify)
+	require.True(t, failed.Partial)
+	require.Contains(t, failed.Error, "deadline exceeded")
+	require.False(t, failed.Published)
+	long, err := WithToolOperationBudget(context.Background(), 5*time.Second)
+	require.NoError(t, err)
+	retried := publishToolRecoveryPinWithValidation(long, root, pin, 100, syncToolDirectory, verify)
+	require.False(t, retried.Partial, retried.Error)
+	require.True(t, retried.Published)
+}

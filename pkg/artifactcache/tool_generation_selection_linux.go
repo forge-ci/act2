@@ -37,7 +37,7 @@ func updateToolGenerationWithMode(ctx context.Context, root string, updates Tool
 		report.fail(err)
 		return report
 	}
-	ctx, cancel := context.WithTimeout(ctx, 180*time.Second)
+	ctx, cancel := toolOperationTimeout(ctx, 180*time.Second)
 	defer cancel()
 	if _, err := validateToolGenerationSpec(root, updates, maxBytes); err != nil {
 		report.fail(err)
@@ -114,7 +114,7 @@ func currentToolGeneration(ctx context.Context, root string, maxBytes int64) (To
 }
 
 func currentToolGenerationState(ctx context.Context, root string, maxBytes int64) (ToolGenerationState, error) {
-	ctx, cancel := context.WithTimeout(ctx, 180*time.Second)
+	ctx, cancel := toolOperationTimeout(ctx, 180*time.Second)
 	defer cancel()
 	guard := ToolGenerationSpec{SchemaVersion: 1, Installs: []ToolGenerationInstall{{Path: "selection", ObjectID: strings.Repeat("0", 64)}}}
 	if _, err := validateToolGenerationSpec(root, guard, maxBytes); err != nil {

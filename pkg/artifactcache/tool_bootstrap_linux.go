@@ -19,7 +19,7 @@ func bootstrapToolGenerationWithSelectionSync(ctx context.Context, source, root 
 	// Explicit enrollment materializes every completed legacy install, unlike
 	// an incremental publication. Keep the whole migration finite while allowing
 	// the measured multi-GiB cache to complete all copy, verification and syncs.
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
+	ctx, cancel := toolOperationTimeout(ctx, 15*time.Minute)
 	defer cancel()
 	if err := validateToolBootstrapStore(root, maxBytes); err != nil {
 		report.fail(err)

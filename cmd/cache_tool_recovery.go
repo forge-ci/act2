@@ -21,7 +21,7 @@ func newCacheToolRecoveryCommand(ctx context.Context, input *Input) *cobra.Comma
 
 func newCacheToolRecoveryMutation(ctx context.Context, input *Input, release bool) *cobra.Command {
 	var record string
-	var maxBytes int64
+	var maxBytes, timeoutSecs int64
 	var apply bool
 	use := "reserve"
 	if release {
@@ -30,6 +30,10 @@ func newCacheToolRecoveryMutation(ctx context.Context, input *Input, release boo
 	command := &cobra.Command{Use: use, Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		if !apply {
 			return fmt.Errorf("tool recovery mutation requires --apply")
+		}
+		opCtx, err := toolOperationContext(ctx, cmd, timeoutSecs)
+		if err != nil {
+			return err
 		}
 		pin, err := readToolRecoveryIntent(record)
 		if err != nil {
@@ -45,7 +49,7 @@ func newCacheToolRecoveryMutation(ctx context.Context, input *Input, release boo
 			}
 			return nil
 		}
-		report := artifactcache.PublishToolRecoveryPin(ctx, input.cacheServerPath, pin, maxBytes)
+		report := artifactcache.PublishToolRecoveryPin(opCtx, input.cacheServerPath, pin, maxBytes)
 		if err := json.NewEncoder(cmd.OutOrStdout()).Encode(report); err != nil {
 			return err
 		}
@@ -58,6 +62,7 @@ func newCacheToolRecoveryMutation(ctx context.Context, input *Input, release boo
 	command.Flags().BoolVar(&apply, "apply", false, "Apply the explicit recovery mutation")
 	if !release {
 		command.Flags().Int64Var(&maxBytes, "max-bytes", 0, "Required positive complete-generation payload validation ceiling")
+		command.Flags().Int64Var(&timeoutSecs, "timeout-secs", 0, "Opt-in operation timeout in seconds (1..43200); parent deadlines still apply")
 	}
 	return command
 }

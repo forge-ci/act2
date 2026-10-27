@@ -31,7 +31,7 @@ func publishToolRecoveryPinWithValidation(ctx context.Context, root string, pin 
 
 func publishToolRecoveryPinWithCatalog(ctx context.Context, root string, pin ToolRecoveryPin, maxBytes int64, syncParent func(string) error, verify toolRecoveryPinVerifier, acquire func(context.Context, string) (transferLease, error)) (report ToolRecoveryPinReport) {
 	report = ToolRecoveryPinReport{SchemaVersion: 1, Root: root, Pin: pin}
-	ctx, cancel := context.WithTimeout(ctx, 180*time.Second)
+	ctx, cancel := toolOperationTimeout(ctx, 180*time.Second)
 	defer cancel()
 	now := time.Now().UTC()
 	if err := pin.validate(); err != nil {

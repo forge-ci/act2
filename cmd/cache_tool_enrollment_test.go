@@ -84,3 +84,37 @@ func TestToolEnrollmentCommandKeepsFenceAndPublicationSeparate(t *testing.T) {
 	require.True(t, done.SourceFenced && done.Enrolled)
 	require.Len(t, done.Generation, 64)
 }
+
+func TestToolOperationCommandsRejectInvalidTimeoutBeforeMutation(t *testing.T) {
+	for _, command := range []string{"tool-enroll", "tool-recovery"} {
+		for _, value := range []string{"0", "-1", "43201"} {
+			store := t.TempDir()
+			root := createRootCommand(context.Background(), &Input{}, "test")
+			args := []string{"cache", command}
+			if command == "tool-recovery" {
+				args = append(args, "reserve")
+			}
+			args = append(args, "--cache-server-path", store, "--apply", "--timeout-secs", value)
+			if command == "tool-enroll" {
+				args = append(args, "--fence-only")
+			}
+			root.SetArgs(args)
+			require.ErrorContains(t, root.Execute(), "tool operation timeout must")
+			entries, err := os.ReadDir(store)
+			require.NoError(t, err)
+			require.Empty(t, entries)
+		}
+	}
+}
+
+func TestToolEnrollmentAcceptsExplicitOperationTimeout(t *testing.T) {
+	base := t.TempDir()
+	root := createRootCommand(context.Background(), &Input{}, "test")
+	var output bytes.Buffer
+	root.SetOut(&output)
+	root.SetArgs([]string{"cache", "tool-enroll", "--from", filepath.Join(base, "legacy"), "--cache-server-path", filepath.Join(base, "store"), "--max-bytes", "100", "--apply", "--fence-only", "--timeout-secs", "30"})
+	require.NoError(t, root.Execute())
+	var report artifactcache.ToolEnrollmentReport
+	require.NoError(t, json.Unmarshal(output.Bytes(), &report))
+	require.True(t, report.SourceFenced)
+}

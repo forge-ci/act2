@@ -226,3 +226,40 @@ func TestToolEnrollmentReportsSelectionCatalogContention(t *testing.T) {
 	require.True(t, retried.Enrolled)
 	require.Equal(t, first.Generation, retried.Generation)
 }
+
+func TestToolEnrollmentBudgetWaitsForHistoryAndKeepsFenceOnRetry(t *testing.T) {
+	base := t.TempDir()
+	source, root := filepath.Join(base, "legacy"), filepath.Join(base, "store")
+	fenced := FenceToolEnrollmentSource(context.Background(), source, root, 100)
+	require.False(t, fenced.Partial, fenced.Error)
+	require.True(t, fenced.SourceFenced)
+	fence, err := os.ReadFile(source)
+	require.NoError(t, err)
+	lock, err := bbolt.Open(toolEnrollmentHistoryPath(root), 0600, nil)
+	require.NoError(t, err)
+	short, err := WithToolOperationBudget(context.Background(), time.Second)
+	require.NoError(t, err)
+	failed := CompleteToolEnrollment(short, source, root, 100)
+	require.True(t, failed.Partial)
+	require.Contains(t, failed.Error, "deadline exceeded")
+	require.NoError(t, lock.Close())
+	after, err := os.ReadFile(source)
+	require.NoError(t, err)
+	require.Equal(t, fence, after)
+
+	long, err := WithToolOperationBudget(context.Background(), 30*time.Second)
+	require.NoError(t, err)
+	entered := false
+	done := enrollToolGenerationOperation(long, source, root, 100, toolEnrollmentRequireFenced,
+		func(db *bbolt.DB, history toolEnrollmentHistory) error {
+			entered = true
+			time.Sleep(1500 * time.Millisecond)
+			return storeToolEnrollmentHistory(db, history)
+		})
+	require.True(t, entered, "the real enrollment reached its slow readiness step")
+	require.False(t, done.Partial, done.Error)
+	require.True(t, done.Enrolled)
+	repeated := CompleteToolEnrollment(context.Background(), source, root, 100)
+	require.False(t, repeated.Partial, repeated.Error)
+	require.Equal(t, done.Generation, repeated.Generation)
+}

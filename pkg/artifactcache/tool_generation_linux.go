@@ -28,7 +28,7 @@ type toolGenerationManifest struct {
 
 func publishToolGeneration(ctx context.Context, root string, spec ToolGenerationSpec, maxBytes int64) (report ToolSnapshotReport) {
 	report = ToolSnapshotReport{SchemaVersion: 1, Source: root, Completion: "generation-v1"}
-	ctx, cancel := context.WithTimeout(ctx, 180*time.Second)
+	ctx, cancel := toolOperationTimeout(ctx, 180*time.Second)
 	defer cancel()
 	installs, err := validateToolGenerationSpec(root, spec, maxBytes)
 	if err != nil {
