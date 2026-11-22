@@ -58,7 +58,7 @@ func TestRawLogWritersEmitCodePageOutputAsUTF8(t *testing.T) {
 	logger.SetFormatter(&logrus.JSONFormatter{})
 	logger.SetOutput(&output)
 	stdout, _ := rawLogWriters(logger, func(string) bool { return true }, true)
-	if _, err := stdout.Write([]byte("caf\xe9 \x1b[31m\x93red\x94\x1b[0m\n")); err != nil {
+	if _, err := stdout.Write([]byte("r\xe9sum\xe9 \x1b[31m\x93red\x94\x1b[0m\n")); err != nil {
 		t.Fatal(err)
 	}
 	var record struct {
@@ -67,7 +67,7 @@ func TestRawLogWritersEmitCodePageOutputAsUTF8(t *testing.T) {
 	if err := json.Unmarshal(output.Bytes(), &record); err != nil {
 		t.Fatal(err)
 	}
-	if record.Message != "café \x1b[31m“red”\x1b[0m\n" {
+	if record.Message != "résumé \x1b[31m“red”\x1b[0m\n" {
 		t.Fatalf("raw output was not decoded to UTF-8: %q", record.Message)
 	}
 }

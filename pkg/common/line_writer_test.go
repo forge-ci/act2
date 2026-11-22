@@ -47,15 +47,15 @@ func TestLineWriterDecodesOutputToUTF8(t *testing.T) {
 	check := []byte("\x1b[32;1mPASS\x1b[0m \xe2\x9c")
 	_, err := lineWriter.Write(check)
 	assert.NoError(t, err)
-	_, err = lineWriter.Write([]byte("\x93 caf\xc3\xa9\r\n"))
+	_, err = lineWriter.Write([]byte("\x93 r\xc3\xa9sum\xc3\xa9\r\n"))
 	assert.NoError(t, err)
 	// A tool writing in a Windows ANSI code page (cp1252) is decoded, never
 	// replaced with U+FFFD; valid UTF-8 in the same line is kept.
-	_, err = lineWriter.Write([]byte("caf\xe9 \x93quoted\x94 \x80 \xa0| \xe2\x9c\x93\n"))
+	_, err = lineWriter.Write([]byte("r\xe9sum\xe9 \x93quoted\x94 \x80 \xa0| \xe2\x9c\x93\n"))
 	assert.NoError(t, err)
 	assert.Equal(t, []string{
-		"\x1b[32;1mPASS\x1b[0m ✓ café\r\n",
-		"café “quoted” €  | ✓\n",
+		"\x1b[32;1mPASS\x1b[0m ✓ résumé\r\n",
+		"résumé “quoted” €  | ✓\n",
 	}, lines)
 }
 
