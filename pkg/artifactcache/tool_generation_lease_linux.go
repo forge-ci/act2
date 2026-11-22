@@ -46,7 +46,11 @@ func acquireToolGenerationLeaseWithValidation(ctx context.Context, root, id stri
 	root = filepath.Clean(root)
 	decoded, _ := hex.DecodeString(id) // validated by the typed generation specification above
 	id = hex.EncodeToString(decoded)
-	ctx, cancel := context.WithTimeout(ctx, 180*time.Second)
+	// Payload validation hashes the whole generation (up to maxBytes), so its
+	// duration follows payload size and host load. A caller with its own outer
+	// limit (bosn's engine preparation) passes it via WithToolOperationBudget;
+	// the fixed 180 s fallback alone failed whole CI runs on loaded hosts.
+	ctx, cancel := toolOperationTimeout(ctx, 180*time.Second)
 	defer cancel()
 	catalog, err := prepareExistingToolSnapshotStore(root)
 	if err != nil {
