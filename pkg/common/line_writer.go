@@ -40,7 +40,10 @@ func (lw *lineWriter) Write(p []byte) (n int, err error) {
 	return written, nil
 }
 
+// handleLine hands every consumer (raw log output, workflow commands) the
+// line as UTF-8; see ToUTF8. A line is whole, so no character is split here.
 func (lw *lineWriter) handleLine(line string) {
+	line = ToUTF8(line)
 	for _, h := range lw.handlers {
 		ok := h(line)
 		if !ok {
