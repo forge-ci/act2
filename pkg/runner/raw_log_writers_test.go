@@ -51,3 +51,23 @@ func TestRawLogWritersKeepStdoutAndStderrSeparate(t *testing.T) {
 		t.Fatalf("command handler received: %q", handled)
 	}
 }
+
+func TestRawLogWritersEmitCodePageOutputAsUTF8(t *testing.T) {
+	var output bytes.Buffer
+	logger := logrus.New()
+	logger.SetFormatter(&logrus.JSONFormatter{})
+	logger.SetOutput(&output)
+	stdout, _ := rawLogWriters(logger, func(string) bool { return true }, true)
+	if _, err := stdout.Write([]byte("caf\xe9 \x1b[31m\x93red\x94\x1b[0m\n")); err != nil {
+		t.Fatal(err)
+	}
+	var record struct {
+		Message string `json:"msg"`
+	}
+	if err := json.Unmarshal(output.Bytes(), &record); err != nil {
+		t.Fatal(err)
+	}
+	if record.Message != "café \x1b[31m“red”\x1b[0m\n" {
+		t.Fatalf("raw output was not decoded to UTF-8: %q", record.Message)
+	}
+}
