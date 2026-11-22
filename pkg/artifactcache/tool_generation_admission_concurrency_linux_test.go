@@ -69,3 +69,31 @@ func TestToolGenerationAdmissionFailedValidationReleasesReader(t *testing.T) {
 	require.NoError(t, err, "failed admission must release reader")
 	require.NoError(t, writer.Close())
 }
+
+func TestToolGenerationAdmissionValidationHonorsCallerBudget(t *testing.T) {
+	store, spec := toolGenerationFixture(t)
+	generation := PublishToolGeneration(context.Background(), store, spec, 100)
+	require.False(t, generation.Partial, generation.Error)
+	openReader := func(path string) (ToolGenerationLease, error) {
+		return openTransferLease(path, true, 100*time.Millisecond)
+	}
+	// Records the time left on the validation context; no sleeps, so the
+	// assertion is independent of host load.
+	remainingAt := func(ctx context.Context) time.Duration {
+		var left time.Duration
+		verify := func(ctx context.Context, path string, data []byte, tree toolManifest, bound int64) error {
+			deadline, ok := ctx.Deadline()
+			require.True(t, ok, "validation always runs under a deadline")
+			left = time.Until(deadline)
+			return verifyToolGeneration(ctx, path, data, tree, bound)
+		}
+		reader, err := acquireToolGenerationLeaseWithValidation(ctx, store, generation.ID, 100, openReader, verify)
+		require.NoError(t, err)
+		require.NoError(t, reader.Close())
+		return left
+	}
+	require.LessOrEqual(t, remainingAt(context.Background()), 180*time.Second, "default keeps the prior limit")
+	budget, err := WithToolOperationBudget(context.Background(), 30*time.Minute)
+	require.NoError(t, err)
+	require.Greater(t, remainingAt(budget), 180*time.Second, "a caller budget replaces the fixed 180 s")
+}

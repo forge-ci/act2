@@ -86,7 +86,7 @@ func TestToolEnrollmentCommandKeepsFenceAndPublicationSeparate(t *testing.T) {
 }
 
 func TestToolOperationCommandsRejectInvalidTimeoutBeforeMutation(t *testing.T) {
-	for _, command := range []string{"tool-enroll", "tool-recovery"} {
+	for _, command := range []string{"tool-enroll", "tool-recovery", "tool-exec"} {
 		for _, value := range []string{"0", "-1", "43201"} {
 			store := t.TempDir()
 			root := createRootCommand(context.Background(), &Input{}, "test")
@@ -97,6 +97,9 @@ func TestToolOperationCommandsRejectInvalidTimeoutBeforeMutation(t *testing.T) {
 			args = append(args, "--cache-server-path", store, "--apply", "--timeout-secs", value)
 			if command == "tool-enroll" {
 				args = append(args, "--fence-only")
+			}
+			if command == "tool-exec" {
+				args = append(args, "--", "true")
 			}
 			root.SetArgs(args)
 			require.ErrorContains(t, root.Execute(), "tool operation timeout must")
