@@ -34,7 +34,10 @@ jobs:
 
   test-linux:
     name: test-linux
-    runs-on: ubuntu-latest
+    # ubuntu-latest became ubuntu-26.04, whose `du` is uutils coreutils. The
+    # tool-store apparent-byte oracle tests need GNU du (and GNU find), so
+    # this lane stays on the last image that ships GNU coreutils as `du`.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
         with:
